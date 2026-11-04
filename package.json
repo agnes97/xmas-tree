@@ -1,0 +1,30 @@
+{
+  "name": "xmas-tree",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "check": "svelte-check --tsconfig ./tsconfig.app.json && tsc -p tsconfig.node.json",
+    "lint": "oxlint",
+    "lint:fix": "oxlint --fix",
+    "format": "oxfmt",
+    "format:check": "oxfmt --check"
+  },
+  "devDependencies": {
+    "@sveltejs/vite-plugin-svelte": "^7.3.1",
+    "@tsconfig/svelte": "^5.0.8",
+    "@types/node": "^24.19.2",
+    "oxfmt": "^0.75.0",
+    "oxlint": "^1.90.0",
+    "svelte": "^5.57.2",
+    "svelte-check": "^4.7.7",
+    "typescript": "~6.0.3",
+    "vite": "^8.3.5"
+  },
+  "engines": {
+    "node": "24.x"
+  }
+}
