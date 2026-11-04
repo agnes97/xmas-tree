@@ -1,0 +1,782 @@
+import * as THREE from 'three';
+
+/**
+ * The Glass Fir: a 2D-canvas fir with eleven painted
+ * glass baubles rendered in WebGL above it that spin and swing on interaction.
+ *
+ * Coordinates for the tree and baubles are in units of the tree's own height.
+ */
+
+type Tier = {
+  y0: number;
+  y1: number;
+  wt: number;
+  wb: number;
+  fill: string;
+  scallops: { x: number; dip: number; lift: number }[];
+};
+
+type Pattern = 'meridians' | 'stars' | 'dots' | 'gold' | 'zigzag' | 'stripes' | 'flakes' | 'bands';
+
+type BaubleDef = {
+  x: number;
+  y: number;
+  r: number;
+  p: Pattern;
+  c: string[];
+};
+
+type Bauble = {
+  def: BaubleDef;
+  pivot: THREE.Group;
+  spinner: THREE.Group;
+  ball: THREE.Mesh;
+  spin: number;
+  spinVel: number;
+  base: number;
+  sz: number;
+  szv: number;
+  sx: number;
+  sxv: number;
+  phase: number;
+  sxp: number;
+  syp: number;
+  rp: number;
+};
+
+type Three = {
+  renderer: THREE.WebGLRenderer;
+  scene: THREE.Scene;
+  camera: THREE.PerspectiveCamera;
+  root: THREE.Group;
+  baubles: Bauble[];
+  dispose: () => void;
+};
+
+const mulberry = (seed: number) => () => {
+  seed = (seed + 0x6d2b79f5) | 0;
+  let t = Math.imul(seed ^ (seed >>> 15), 1 | seed);
+  t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+  return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+};
+
+const TIERS: Tier[] = [
+  { y0: 0.0, y1: 0.25, wt: 0, wb: 0.16, fill: '#386d50' },
+  { y0: 0.15, y1: 0.43, wt: 0.07, wb: 0.245, fill: '#33674b' },
+  { y0: 0.32, y1: 0.62, wt: 0.11, wb: 0.32, fill: '#2f6147' },
+  { y0: 0.5, y1: 0.8, wt: 0.15, wb: 0.395, fill: '#2c5c43' },
+  { y0: 0.68, y1: 0.93, wt: 0.19, wb: 0.46, fill: '#29573f' },
+].map((t, i) => {
+  const r = mulberry(11 + i * 7);
+  const n = Math.round(t.wb * 16) + 2;
+  return {
+    ...t,
+    scallops: Array.from({ length: n }, (_, k) => ({
+      x: t.wb * 0.84 - ((k + 1) * 1.68 * t.wb) / n,
+      dip: 0.09 + r() * 0.07,
+      lift: k === n - 1 ? 0.01 : (r() - 0.5) * 0.035,
+    })),
+  };
+});
+
+const RED = '#d8283c';
+const CREAM = '#f6efe2';
+const OCHRE = '#e9a62b';
+const TEAL = '#2f8f8a';
+const NAVY = '#22336b';
+const PINK = '#ec8fa0';
+const GOLD = '#f1c35a';
+
+export const BAUBLES: BaubleDef[] = [
+  { x: 0.015, y: 0.13, r: 0.042, p: 'meridians', c: [RED, CREAM] },
+  { x: -0.12, y: 0.29, r: 0.037, p: 'stars', c: [NAVY, GOLD] },
+  { x: 0.145, y: 0.33, r: 0.04, p: 'dots', c: [RED, CREAM] },
+  { x: -0.01, y: 0.42, r: 0.034, p: 'gold', c: ['#d9ac52', '#9c6f22'] },
+  { x: -0.23, y: 0.5, r: 0.042, p: 'zigzag', c: [OCHRE, RED, CREAM] },
+  { x: 0.215, y: 0.52, r: 0.038, p: 'stripes', c: [CREAM, RED] },
+  { x: 0.03, y: 0.585, r: 0.045, p: 'flakes', c: [TEAL, CREAM] },
+  { x: -0.31, y: 0.7, r: 0.046, p: 'bands', c: [PINK, RED, CREAM] },
+  { x: -0.085, y: 0.72, r: 0.036, p: 'dots', c: [OCHRE, NAVY] },
+  { x: 0.3, y: 0.68, r: 0.044, p: 'meridians', c: [NAVY, CREAM] },
+  { x: 0.12, y: 0.79, r: 0.04, p: 'stars', c: [RED, GOLD] },
+];
+
+const STRING = 0.03;
+const clamp = (v: number, m: number) => Math.max(-m, Math.min(m, v));
+
+function star(ctx: CanvasRenderingContext2D, x: number, y: number, R: number, rot: number) {
+  ctx.beginPath();
+  for (let i = 0; i < 10; i++) {
+    const a = rot - Math.PI / 2 + (i * Math.PI) / 5;
+    const rr = i % 2 ? R * 0.46 : R;
+    ctx.lineTo(x + Math.cos(a) * rr, y + Math.sin(a) * rr);
+  }
+  ctx.closePath();
+}
+
+function paintTexture(def: BaubleDef) {
+  const cv = document.createElement('canvas');
+  const Wt = 1024;
+  const Ht = 512;
+  cv.width = Wt;
+  cv.height = Ht;
+  const g = cv.getContext('2d')!;
+  const [a, b, c] = def.c;
+  const stretch = (y: number) => 1 / Math.max(0.3, Math.sin((Math.PI * y) / Ht));
+  const wrap = (x: number, fn: (x: number) => void) => {
+    fn(x - Wt);
+    fn(x);
+    fn(x + Wt);
+  };
+  g.fillStyle = a;
+  g.fillRect(0, 0, Wt, Ht);
+
+  const starAt = (x: number, y: number, R: number) => {
+    const k = stretch(y);
+    g.beginPath();
+    for (let i = 0; i < 10; i++) {
+      const ang = -Math.PI / 2 + (i * Math.PI) / 5;
+      const rr = i % 2 ? R * 0.45 : R;
+      g.lineTo(x + Math.cos(ang) * rr * k, y + Math.sin(ang) * rr);
+    }
+    g.fill();
+  };
+
+  switch (def.p) {
+    case 'dots': {
+      g.fillStyle = b;
+      [0.24, 0.37, 0.5, 0.63, 0.76].forEach((v, row) => {
+        const y = v * Ht;
+        const n = 10;
+        for (let i = 0; i < n; i++) {
+          const x = ((i + (row % 2) * 0.5) * Wt) / n;
+          wrap(x, (xx) => {
+            g.beginPath();
+            g.ellipse(xx, y, 17 * stretch(y), 17, 0, 0, Math.PI * 2);
+            g.fill();
+          });
+        }
+      });
+      break;
+    }
+    case 'stripes': {
+      g.fillStyle = b;
+      const period = Wt / 12;
+      for (let x = -Wt; x < Wt * 2; x += period) {
+        g.beginPath();
+        g.moveTo(x, 0);
+        g.lineTo(x + period * 0.45, 0);
+        g.lineTo(x + period * 0.45 + Ht * 0.8, Ht);
+        g.lineTo(x + Ht * 0.8, Ht);
+        g.fill();
+      }
+      break;
+    }
+    case 'zigzag': {
+      g.strokeStyle = b;
+      g.lineWidth = 28;
+      g.lineJoin = 'round';
+      g.beginPath();
+      const teeth = 12;
+      for (let i = 0; i <= teeth * 2; i++) {
+        g.lineTo((i * Wt) / (teeth * 2), Ht / 2 + (i % 2 ? 38 : -38));
+      }
+      g.stroke();
+      g.fillStyle = c;
+      g.fillRect(0, Ht / 2 - 92, Wt, 12);
+      g.fillRect(0, Ht / 2 + 80, Wt, 12);
+      break;
+    }
+    case 'meridians': {
+      g.fillStyle = b;
+      for (let i = 0; i < 8; i += 2) g.fillRect((i * Wt) / 8, 0, Wt / 8, Ht);
+      break;
+    }
+    case 'stars': {
+      g.fillStyle = b;
+      (
+        [
+          [0.3, 7],
+          [0.5, 8],
+          [0.7, 7],
+        ] as const
+      ).forEach(([v, n], row) => {
+        for (let i = 0; i < n; i++) {
+          wrap(((i + row * 0.5) * Wt) / n, (x) => starAt(x, v * Ht, 26));
+        }
+      });
+      break;
+    }
+    case 'flakes': {
+      g.strokeStyle = b;
+      g.lineWidth = 5;
+      g.lineCap = 'round';
+      (
+        [
+          [0.32, 8],
+          [0.5, 9],
+          [0.68, 8],
+        ] as const
+      ).forEach(([v, n], row) => {
+        for (let i = 0; i < n; i++) {
+          wrap(((i + row * 0.5) * Wt) / n, (x) => {
+            const y = v * Ht;
+            const k = stretch(y);
+            for (let s = 0; s < 6; s++) {
+              const ang = (s * Math.PI) / 3;
+              const dx = Math.cos(ang);
+              const dy = Math.sin(ang);
+              g.beginPath();
+              g.moveTo(x, y);
+              g.lineTo(x + dx * 24 * k, y + dy * 24);
+              g.stroke();
+              const mx = x + dx * 14 * k;
+              const my = y + dy * 14;
+              const p1 = ang + 0.7;
+              const p2 = ang - 0.7;
+              g.beginPath();
+              g.moveTo(mx, my);
+              g.lineTo(mx + Math.cos(p1) * 8 * k, my + Math.sin(p1) * 8);
+              g.moveTo(mx, my);
+              g.lineTo(mx + Math.cos(p2) * 8 * k, my + Math.sin(p2) * 8);
+              g.stroke();
+            }
+          });
+        }
+      });
+      break;
+    }
+    case 'bands': {
+      g.fillStyle = b;
+      g.fillRect(0, Ht * 0.38, Wt, Ht * 0.24);
+      g.fillStyle = c;
+      g.fillRect(0, Ht * 0.33, Wt, 10);
+      g.fillRect(0, Ht * 0.65, Wt, 10);
+      for (let i = 0; i < 16; i++) {
+        g.beginPath();
+        g.arc(((i + 0.5) * Wt) / 16, Ht / 2, 13, 0, Math.PI * 2);
+        g.fill();
+      }
+      break;
+    }
+    case 'gold': {
+      g.fillStyle = b;
+      g.fillRect(0, Ht / 2 - 26, Wt, 52);
+      g.fillStyle = a;
+      for (let i = 0; i < 24; i++) {
+        g.beginPath();
+        g.arc(((i + 0.5) * Wt) / 24, Ht / 2, 9, 0, Math.PI * 2);
+        g.fill();
+      }
+      break;
+    }
+  }
+
+  // A little brush grain so the glass reads as hand-painted.
+  const r = mulberry(def.x * 1000 + def.y * 100);
+  for (let i = 0; i < 1600; i++) {
+    g.fillStyle = r() < 0.5 ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.05)';
+    g.fillRect(r() * Wt, r() * Ht, 2 + r() * 4, 1 + r() * 2);
+  }
+  return cv;
+}
+
+function initThree(canvas: HTMLCanvasElement, reduced: boolean): Three {
+  const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
+  const scene = new THREE.Scene();
+  const camera = new THREE.PerspectiveCamera(22, 1, 1, 10000);
+  const disposables: { dispose: () => void }[] = [renderer];
+
+  // A soft studio box with three light panels, baked into an environment map for the glass reflections.
+  const pmrem = new THREE.PMREMGenerator(renderer);
+  const env = new THREE.Scene();
+  env.add(
+    new THREE.Mesh(
+      new THREE.BoxGeometry(20, 20, 20),
+      new THREE.MeshBasicMaterial({ color: 0x2a3f33, side: THREE.BackSide })
+    )
+  );
+  const panel = (w: number, h: number, color: THREE.Color, pos: [number, number, number]) => {
+    const m = new THREE.Mesh(
+      new THREE.PlaneGeometry(w, h),
+      new THREE.MeshBasicMaterial({ color, side: THREE.DoubleSide })
+    );
+    m.position.set(...pos);
+    m.lookAt(0, 0, 0);
+    env.add(m);
+  };
+  panel(6, 4, new THREE.Color(2.4, 2.4, 2.3), [-4, 5, 6]);
+  panel(3, 6, new THREE.Color(1.3, 1.15, 0.9), [7, 1, 2]);
+  panel(12, 2, new THREE.Color(0.45, 0.6, 0.5), [0, -6, 2]);
+  const envTarget = pmrem.fromScene(env, 0.02);
+  scene.environment = envTarget.texture;
+  pmrem.dispose();
+  env.traverse((o) => {
+    if (o instanceof THREE.Mesh) {
+      o.geometry.dispose();
+      (o.material as THREE.Material).dispose();
+    }
+  });
+  disposables.push(envTarget);
+
+  // Modern three.js no longer scales punctual light intensity by π; restore the original balance.
+  const key = new THREE.DirectionalLight(0xffffff, 1.1 * Math.PI);
+  key.position.set(-1, 1.4, 1.6);
+  scene.add(key, new THREE.AmbientLight(0xffffff, 0.12 * Math.PI));
+
+  const root = new THREE.Group();
+  scene.add(root);
+
+  const sphereGeo = new THREE.SphereGeometry(1, 64, 48);
+  const capGeo = new THREE.CylinderGeometry(0.27, 0.3, 0.24, 28);
+  const loopGeo = new THREE.TorusGeometry(0.1, 0.028, 10, 24);
+  const stringGeo = new THREE.CylinderGeometry(1, 1, 1, 6);
+  const planeGeo = new THREE.PlaneGeometry(1, 1);
+  const capMat = new THREE.MeshStandardMaterial({ color: 0xd2a752, metalness: 1, roughness: 0.32 });
+  const stringMat = new THREE.MeshBasicMaterial({ color: 0x4a3c2a });
+
+  const sh = document.createElement('canvas');
+  sh.width = sh.height = 128;
+  const sg = sh.getContext('2d')!;
+  const grad = sg.createRadialGradient(64, 64, 0, 64, 64, 64);
+  grad.addColorStop(0, 'rgba(10,30,20,0.55)');
+  grad.addColorStop(0.55, 'rgba(10,30,20,0.25)');
+  grad.addColorStop(1, 'rgba(10,30,20,0)');
+  sg.fillStyle = grad;
+  sg.fillRect(0, 0, 128, 128);
+  const shadowTex = new THREE.CanvasTexture(sh);
+  const shadowMat = new THREE.MeshBasicMaterial({
+    map: shadowTex,
+    transparent: true,
+    depthWrite: false,
+  });
+  disposables.push(
+    sphereGeo,
+    capGeo,
+    loopGeo,
+    stringGeo,
+    planeGeo,
+    capMat,
+    stringMat,
+    shadowTex,
+    shadowMat
+  );
+
+  const aniso = renderer.capabilities.getMaxAnisotropy();
+  const rnd = mulberry(3);
+  const baubles = BAUBLES.map((def): Bauble => {
+    const tex = new THREE.CanvasTexture(paintTexture(def));
+    tex.colorSpace = THREE.SRGBColorSpace;
+    tex.anisotropy = aniso;
+    const metal = def.p === 'gold';
+    const mat = new THREE.MeshPhysicalMaterial({
+      map: tex,
+      roughness: metal ? 0.24 : 0.3,
+      metalness: metal ? 0.85 : 0.04,
+      clearcoat: 1,
+      clearcoatRoughness: 0.06,
+    });
+    disposables.push(tex, mat);
+
+    const r = def.r;
+    const pivot = new THREE.Group();
+    const str = new THREE.Mesh(stringGeo, stringMat);
+    str.scale.set(0.0011, STRING, 0.0011);
+    str.position.y = -STRING / 2;
+    const spinner = new THREE.Group();
+    spinner.position.y = -STRING;
+    const loop = new THREE.Mesh(loopGeo, capMat);
+    loop.scale.setScalar(r);
+    loop.position.y = -0.09 * r;
+    const cap = new THREE.Mesh(capGeo, capMat);
+    cap.scale.setScalar(r);
+    cap.position.y = -0.29 * r;
+    const ball = new THREE.Mesh(sphereGeo, mat);
+    ball.scale.setScalar(r);
+    ball.position.y = -1.38 * r;
+    spinner.add(loop, cap, ball);
+    const shadow = new THREE.Mesh(planeGeo, shadowMat);
+    shadow.scale.setScalar(r * 2.7);
+    shadow.position.set(r * 0.4, -STRING - 1.38 * r - r * 0.3, -r * 1.2);
+    pivot.add(str, spinner, shadow);
+    root.add(pivot);
+
+    return {
+      def,
+      pivot,
+      spinner,
+      ball,
+      spin: rnd() * Math.PI * 2,
+      spinVel: 0,
+      base: reduced ? 0 : (rnd() < 0.5 ? -1 : 1) * (0.18 + rnd() * 0.18),
+      sz: 0,
+      szv: 0,
+      sx: 0,
+      sxv: 0,
+      phase: rnd() * Math.PI * 2,
+      sxp: 0,
+      syp: 0,
+      rp: 0,
+    };
+  });
+
+  return {
+    renderer,
+    scene,
+    camera,
+    root,
+    baubles,
+    dispose: () => disposables.forEach((d) => d.dispose()),
+  };
+}
+
+/**
+ * Mounts the tree into `stage` (a positioned element) and returns a cleanup
+ * function, so it can be used directly as a Svelte attachment.
+ */
+export function mountGlassFir(stage: HTMLElement) {
+  const [treeCanvas, glCanvas] = ['tree', 'gl'].map((name) => {
+    const cv = document.createElement('canvas');
+    cv.dataset.layer = name;
+    stage.append(cv);
+    return cv;
+  });
+  const canvases = { tree: treeCanvas, gl: glCanvas };
+  const treeCtx = canvases.tree.getContext('2d')!;
+  const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const css = (name: string) => getComputedStyle(stage).getPropertyValue(name).trim();
+
+  let W = 0;
+  let H = 0;
+  let dpr = 1;
+  let TH = 0;
+  let cx = 0;
+  let top = 0;
+  let paths: Path2D[] = [];
+
+  const X = (u: number) => cx + u * TH;
+  const Y = (v: number) => top + v * TH;
+
+  function tierPath(t: Tier) {
+    const p = new Path2D();
+    const h = t.y1 - t.y0;
+    const { wt, wb } = t;
+    const tw = Math.max(wt, 0.006);
+    const ty = t.y0 + (wt ? 0 : 0.006);
+    p.moveTo(X(-tw), Y(ty));
+    p.quadraticCurveTo(X(0), Y(t.y0 - h * (wt ? 0.06 : 0.03)), X(tw), Y(ty));
+    p.bezierCurveTo(
+      X(wt + (wb - wt) * 0.3),
+      Y(t.y0 + h * 0.32),
+      X(wb * 1.04),
+      Y(t.y1 - h * 0.5),
+      X(wb),
+      Y(t.y1 - h * 0.13)
+    );
+    p.quadraticCurveTo(X(wb * 1.02), Y(t.y1 + h * 0.03), X(wb * 0.84), Y(t.y1 + h * 0.01));
+    let prev = wb * 0.84;
+    for (const s of t.scallops) {
+      p.quadraticCurveTo(X((prev + s.x) / 2), Y(t.y1 + h * s.dip), X(s.x), Y(t.y1 + h * s.lift));
+      prev = s.x;
+    }
+    p.quadraticCurveTo(X(-wb * 1.02), Y(t.y1 + h * 0.03), X(-wb), Y(t.y1 - h * 0.13));
+    p.bezierCurveTo(
+      X(-wb * 1.04),
+      Y(t.y1 - h * 0.5),
+      X(-wt - (wb - wt) * 0.3),
+      Y(t.y0 + h * 0.32),
+      X(-tw),
+      Y(ty)
+    );
+    p.closePath();
+    return p;
+  }
+
+  function drawTree() {
+    const ctx = treeCtx;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, W, H);
+    const S = TH;
+
+    ctx.fillStyle = css('--snow');
+    ctx.beginPath();
+    ctx.ellipse(X(0), Y(1.0), S * 0.44, S * 0.038, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.fillStyle = '#6a4630';
+    ctx.beginPath();
+    ctx.moveTo(X(-0.032), Y(0.86));
+    ctx.lineTo(X(0.032), Y(0.86));
+    ctx.quadraticCurveTo(X(0.036), Y(0.96), X(0.05), Y(1.0));
+    ctx.lineTo(X(-0.05), Y(1.0));
+    ctx.quadraticCurveTo(X(-0.036), Y(0.96), X(-0.032), Y(0.86));
+    ctx.fill();
+
+    for (let i = TIERS.length - 1; i >= 0; i--) {
+      const t = TIERS[i];
+      const path = paths[i];
+      // The tier above casts a flat shadow onto what is already drawn.
+      ctx.save();
+      ctx.globalCompositeOperation = 'source-atop';
+      ctx.translate(S * 0.005, S * 0.022);
+      ctx.fillStyle = 'rgba(18, 44, 31, 0.78)';
+      ctx.fill(path);
+      ctx.restore();
+
+      ctx.fillStyle = t.fill;
+      ctx.fill(path);
+
+      // Needles.
+      ctx.save();
+      ctx.clip(path);
+      const r = mulberry(101 + i * 13);
+      const count = Math.round(((t.wb + t.wt) * (t.y1 - t.y0)) / 0.0026);
+      ctx.lineCap = 'round';
+      for (let k = 0; k < count; k++) {
+        const u = (r() * 2 - 1) * t.wb;
+        const v = t.y0 + r() * (t.y1 - t.y0 + 0.03);
+        const light = r() < 0.18;
+        const a = -1.2 + (r() - 0.5) * 0.55;
+        const len = S * (0.009 + r() * 0.007);
+        ctx.strokeStyle = light ? 'rgba(98, 150, 116, 0.55)' : 'rgba(22, 52, 37, 0.85)';
+        ctx.lineWidth = S * (light ? 0.0028 : 0.0034);
+        ctx.beginPath();
+        ctx.moveTo(X(u) - (Math.cos(a) * len) / 2, Y(v) - (Math.sin(a) * len) / 2);
+        ctx.lineTo(X(u) + (Math.cos(a) * len) / 2, Y(v) + (Math.sin(a) * len) / 2);
+        ctx.stroke();
+      }
+      ctx.restore();
+    }
+
+    const sx = X(0);
+    const sy = Y(-0.03);
+    const R = S * 0.052;
+    star(ctx, sx + S * 0.004, sy + S * 0.007, R, 0.12);
+    ctx.fillStyle = '#b97d17';
+    ctx.fill();
+    star(ctx, sx, sy, R, 0.12);
+    ctx.fillStyle = '#f2b534';
+    ctx.fill();
+  }
+
+  let three: Three | null = null;
+  try {
+    three = initThree(canvases.gl, reduced);
+  } catch {
+    // No WebGL: the tree still renders, just without the glass baubles.
+    three = null;
+  }
+
+  function layout() {
+    const rect = stage.getBoundingClientRect();
+    W = rect.width;
+    H = rect.height;
+    if (!W || !H) return;
+    dpr = Math.min(window.devicePixelRatio || 1, 2);
+    TH = Math.min((H * 0.94) / 1.08, (W - 32) / 0.98);
+    cx = W / 2;
+    top = (H - 1.08 * TH) / 2 + 0.07 * TH;
+    canvases.tree.width = Math.round(W * dpr);
+    canvases.tree.height = Math.round(H * dpr);
+    paths = TIERS.map(tierPath);
+    drawTree();
+
+    if (three) {
+      const { renderer, camera, root, baubles } = three;
+      renderer.setPixelRatio(dpr);
+      renderer.setSize(W, H, false);
+      camera.aspect = W / H;
+      const dist = H / 2 / Math.tan(THREE.MathUtils.degToRad(11));
+      camera.position.set(0, 0, dist);
+      camera.near = dist * 0.2;
+      camera.far = dist * 3;
+      camera.updateProjectionMatrix();
+      root.position.set(cx - W / 2, H / 2 - top, 0);
+      for (const b of baubles) {
+        b.pivot.position.set(b.def.x * TH, -b.def.y * TH, 0);
+        b.pivot.scale.setScalar(TH);
+      }
+    }
+  }
+
+  // ---------- Interaction ----------
+  const v3 = new THREE.Vector3();
+  function project() {
+    if (!three) return;
+    for (const b of three.baubles) {
+      b.ball.getWorldPosition(v3).project(three.camera);
+      b.sxp = ((v3.x + 1) / 2) * W;
+      b.syp = ((1 - v3.y) / 2) * H;
+      b.rp = b.def.r * TH;
+    }
+  }
+
+  const hit = (x: number, y: number) => {
+    if (!three) return null;
+    let best: Bauble | null = null;
+    let bd = Infinity;
+    for (const b of three.baubles) {
+      const d = Math.hypot(b.sxp - x, b.syp - y);
+      if (d < b.rp * 1.25 && d < bd) {
+        best = b;
+        bd = d;
+      }
+    }
+    return best;
+  };
+
+  type Point = { x: number; y: number; t: number };
+  let last: Point | null = null;
+  let grabbed: Bauble | null = null;
+  const local = (e: PointerEvent): Point => {
+    const r = stage.getBoundingClientRect();
+    return { x: e.clientX - r.left, y: e.clientY - r.top, t: e.timeStamp };
+  };
+
+  const onPointerDown = (e: PointerEvent) => {
+    const p = local(e);
+    last = p;
+    grabbed = hit(p.x, p.y);
+    if (grabbed) {
+      stage.setPointerCapture(e.pointerId);
+      stage.style.cursor = 'grabbing';
+    }
+  };
+
+  const onPointerMove = (e: PointerEvent) => {
+    const p = local(e);
+    if (!three) return;
+    if (!last || (e.pointerType !== 'mouse' && e.buttons === 0)) {
+      last = p;
+      return;
+    }
+    const dx = clamp(p.x - last.x, 80);
+    const dy = clamp(p.y - last.y, 80);
+    const dt = Math.max(0.008, (p.t - last.t) / 1000);
+    last = p;
+    if (grabbed) {
+      const turn = dx / grabbed.rp;
+      grabbed.spin += turn;
+      grabbed.spinVel = grabbed.spinVel * 0.5 + clamp(turn / dt, 18) * 0.5;
+      grabbed.szv += dx * 0.004;
+      return;
+    }
+    // Sweeping past the branches nudges every bauble within reach.
+    for (const b of three.baubles) {
+      const reach = b.rp * 1.7 + 30;
+      const f = Math.exp(-((Math.hypot(b.sxp - p.x, b.syp - p.y) / reach) ** 2));
+      if (f < 0.02) continue;
+      b.spinVel = clamp(b.spinVel + (dx / b.rp) * 7 * f, 16);
+      b.szv += dx * 0.011 * f;
+      b.sxv += dy * 0.009 * f;
+    }
+    if (e.pointerType === 'mouse') stage.style.cursor = hit(p.x, p.y) ? 'grab' : 'default';
+  };
+
+  const release = () => {
+    grabbed = null;
+    stage.style.cursor = 'default';
+  };
+  const onPointerLeave = () => {
+    if (!grabbed) last = null;
+  };
+
+  const KEYS: Record<string, [number, number, number]> = {
+    ArrowLeft: [-5, -0.5, 0],
+    ArrowRight: [5, 0.5, 0],
+    ArrowUp: [0, 0, -0.5],
+    ArrowDown: [0, 0, 0.5],
+  };
+  const onKeyDown = (e: KeyboardEvent) => {
+    if (!three) return;
+    const k = KEYS[e.key];
+    if (!k) return;
+    e.preventDefault();
+    for (const b of three.baubles) {
+      b.spinVel = clamp(b.spinVel + k[0] * (0.7 + Math.random() * 0.6), 16);
+      b.szv += k[1] * (0.6 + Math.random() * 0.8);
+      b.sxv += k[2] * (0.6 + Math.random() * 0.8);
+    }
+  };
+
+  stage.addEventListener('pointerdown', onPointerDown);
+  stage.addEventListener('pointermove', onPointerMove);
+  stage.addEventListener('pointerup', release);
+  stage.addEventListener('pointercancel', release);
+  stage.addEventListener('pointerleave', onPointerLeave);
+  stage.addEventListener('keydown', onKeyDown);
+
+  // ---------- Loop ----------
+  let prevT = performance.now();
+  let raf = 0;
+  function frame(now: number) {
+    const dt = Math.min(0.05, (now - prevT) / 1000);
+    prevT = now;
+    const t = now / 1000;
+    if (three) {
+      for (const b of three.baubles) {
+        if (b !== grabbed) {
+          b.spinVel += (b.base - b.spinVel) * (1 - Math.exp(-0.55 * dt));
+          b.spin += b.spinVel * dt;
+        }
+        // Damped spring pulls each bauble back to hanging straight, with a slight idle sway.
+        const k = 18;
+        const c = 1.5;
+        const idle = reduced ? 0 : Math.sin(t * 0.9 + b.phase) * 0.012;
+        b.szv += (-k * (b.sz - idle) - c * b.szv) * dt;
+        b.sxv += (-k * b.sx - c * b.sxv) * dt;
+        b.sz = clamp(b.sz + b.szv * dt, 0.7);
+        b.sx = clamp(b.sx + b.sxv * dt, 0.6);
+        b.spinner.rotation.y = b.spin;
+        b.pivot.rotation.z = b.sz;
+        b.pivot.rotation.x = b.sx;
+      }
+      three.renderer.render(three.scene, three.camera);
+      project();
+    }
+    raf = requestAnimationFrame(frame);
+  }
+
+  layout();
+  const resizeObserver = new ResizeObserver(() => layout());
+  resizeObserver.observe(stage);
+
+  const redraw = () => {
+    if (!W || !H) return;
+    drawTree();
+  };
+  const darkQuery = matchMedia('(prefers-color-scheme: dark)');
+  darkQuery.addEventListener('change', redraw);
+
+  // Opening: a wave of turning glass runs down the tree.
+  const timers: number[] = [];
+  if (three && !reduced) {
+    for (const b of three.baubles) {
+      timers.push(
+        window.setTimeout(
+          () => {
+            b.spinVel += 7 * (b.base < 0 ? -1 : 1);
+            b.szv += 0.5 * (b.def.x < 0 ? -1 : 1);
+          },
+          300 + b.def.y * 1100
+        )
+      );
+    }
+  }
+  raf = requestAnimationFrame(frame);
+
+  return () => {
+    cancelAnimationFrame(raf);
+    timers.forEach(clearTimeout);
+    resizeObserver.disconnect();
+    darkQuery.removeEventListener('change', redraw);
+    stage.removeEventListener('pointerdown', onPointerDown);
+    stage.removeEventListener('pointermove', onPointerMove);
+    stage.removeEventListener('pointerup', release);
+    stage.removeEventListener('pointercancel', release);
+    stage.removeEventListener('pointerleave', onPointerLeave);
+    stage.removeEventListener('keydown', onKeyDown);
+    three?.dispose();
+    for (const cv of [treeCanvas, glCanvas]) cv.remove();
+  };
+}

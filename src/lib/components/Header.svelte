@@ -33,7 +33,12 @@
 
   h1 {
     margin: 0;
-    font-size: 1.5rem;
+    font-family: var(--display);
+    font-weight: 400;
+    font-size: clamp(28px, 3.4vw, 44px);
+    line-height: 1;
+    letter-spacing: -0.01em;
+    color: var(--title);
   }
 
   .user {
