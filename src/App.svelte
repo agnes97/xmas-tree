@@ -1,13 +1,28 @@
 <script lang="ts">
+  import { untrack } from 'svelte';
   import GlassFir from './lib/components/GlassFir.svelte';
   import Header from './lib/components/Header.svelte';
   import LoginForm from './lib/components/LoginForm.svelte';
   import Modal from './lib/components/Modal.svelte';
+  import { auth } from './lib/auth.svelte';
+  import { tree } from './lib/tree.svelte';
 
   let isLoginOpen = $state(false);
 
   const year = new Date().getFullYear();
+
+  // The baubles belong to the account: load them on login, take them down on logout.
+  $effect(() => {
+    const isAuthenticated = auth.isAuthenticated;
+    untrack(() => (isAuthenticated ? tree.load() : tree.reset()));
+  });
 </script>
+
+<svelte:window
+  onbeforeunload={(event) => {
+    if (tree.isDirty) event.preventDefault();
+  }}
+/>
 
 <Header onLoginClick={() => (isLoginOpen = true)} />
 

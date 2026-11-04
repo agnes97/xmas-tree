@@ -1,6 +1,6 @@
 import type { AuthStatus, LoginBody, User } from './types';
 
-const API_URL = 'https://prismify.macovi.space';
+export const API_URL: string = import.meta.env.VITE_API_URL ?? 'https://prismify.macovi.space';
 const TOKEN_KEY = 'accessToken';
 
 class Auth {
@@ -39,6 +39,18 @@ class Auth {
 
     localStorage.setItem(TOKEN_KEY, data.accessToken);
     await this.fetchMe(data.accessToken);
+  }
+
+  /** Calls the API as the logged-in user; a rejected token logs them out. */
+  async request(path: string, init: RequestInit = {}) {
+    const token = localStorage.getItem(TOKEN_KEY);
+    const headers = new Headers(init.headers);
+    if (token) headers.set('Authorization', `Bearer ${token}`);
+    if (init.body) headers.set('Content-Type', 'application/json');
+
+    const response = await fetch(`${API_URL}${path}`, { ...init, headers });
+    if (response.status === 401) this.logout();
+    return response;
   }
 
   logout() {

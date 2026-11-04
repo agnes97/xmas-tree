@@ -1,4 +1,7 @@
 import * as THREE from 'three';
+import { paintJJBauble } from './jjBauble';
+import { paintStreaksBauble } from './streaksBauble';
+import type { GlitterMaps } from './sphereMaps';
 
 /**
  * The Glass Fir: a 2D-canvas fir with eleven painted
@@ -16,9 +19,20 @@ type Tier = {
   scallops: { x: number; dip: number; lift: number }[];
 };
 
-type Pattern = 'meridians' | 'stars' | 'dots' | 'gold' | 'zigzag' | 'stripes' | 'flakes' | 'bands';
+type Pattern =
+  | 'jj'
+  | 'streaks'
+  | 'meridians'
+  | 'stars'
+  | 'dots'
+  | 'gold'
+  | 'zigzag'
+  | 'stripes'
+  | 'flakes'
+  | 'bands';
 
 type BaubleDef = {
+  id: string;
   x: number;
   y: number;
   r: number;
@@ -26,8 +40,28 @@ type BaubleDef = {
   c: string[];
 };
 
+/** Where a bauble hangs from, in units of the tree's height: x from the trunk, y down from the top. */
+export type Position = { x: number; y: number };
+export type Layout = Record<string, Position>;
+
+export type GlassFirOptions = {
+  /** A bauble was moved in edit mode. */
+  onMove?: (id: string, position: Position) => void;
+  /** A bauble was picked with the keyboard in edit mode; for announcing it. */
+  onPick?: (label: string) => void;
+};
+
+export type GlassFir = {
+  /** The baubles' positions, or null to show the tree bare. */
+  setLayout: (layout: Layout | null) => void;
+  setEditing: (editing: boolean) => void;
+  destroy: () => void;
+};
+
 type Bauble = {
   def: BaubleDef;
+  x: number;
+  y: number;
   pivot: THREE.Group;
   spinner: THREE.Group;
   ball: THREE.Mesh;
@@ -88,21 +122,36 @@ const PINK = '#ec8fa0';
 const GOLD = '#f1c35a';
 
 export const BAUBLES: BaubleDef[] = [
-  { x: 0.015, y: 0.13, r: 0.042, p: 'meridians', c: [RED, CREAM] },
-  { x: -0.12, y: 0.29, r: 0.037, p: 'stars', c: [NAVY, GOLD] },
-  { x: 0.145, y: 0.33, r: 0.04, p: 'dots', c: [RED, CREAM] },
-  { x: -0.01, y: 0.42, r: 0.034, p: 'gold', c: ['#d9ac52', '#9c6f22'] },
-  { x: -0.23, y: 0.5, r: 0.042, p: 'zigzag', c: [OCHRE, RED, CREAM] },
-  { x: 0.215, y: 0.52, r: 0.038, p: 'stripes', c: [CREAM, RED] },
-  { x: 0.03, y: 0.585, r: 0.045, p: 'flakes', c: [TEAL, CREAM] },
-  { x: -0.31, y: 0.7, r: 0.046, p: 'bands', c: [PINK, RED, CREAM] },
-  { x: -0.085, y: 0.72, r: 0.036, p: 'dots', c: [OCHRE, NAVY] },
-  { x: 0.3, y: 0.68, r: 0.044, p: 'meridians', c: [NAVY, CREAM] },
-  { x: 0.12, y: 0.79, r: 0.04, p: 'stars', c: [RED, GOLD] },
+  { id: 'lime-jj', x: 0.015, y: 0.13, r: 0.042, p: 'jj', c: [] },
+  { id: 'navy-stars', x: -0.12, y: 0.29, r: 0.037, p: 'stars', c: [NAVY, GOLD] },
+  { id: 'grey-streaks', x: 0.145, y: 0.33, r: 0.04, p: 'streaks', c: [] },
+  { id: 'gold', x: -0.01, y: 0.42, r: 0.034, p: 'gold', c: ['#d9ac52', '#9c6f22'] },
+  { id: 'ochre-zigzag', x: -0.23, y: 0.5, r: 0.042, p: 'zigzag', c: [OCHRE, RED, CREAM] },
+  { id: 'cream-stripes', x: 0.215, y: 0.52, r: 0.038, p: 'stripes', c: [CREAM, RED] },
+  { id: 'teal-flakes', x: 0.03, y: 0.585, r: 0.045, p: 'flakes', c: [TEAL, CREAM] },
+  { id: 'pink-bands', x: -0.31, y: 0.7, r: 0.046, p: 'bands', c: [PINK, RED, CREAM] },
+  { id: 'ochre-dots', x: -0.085, y: 0.72, r: 0.036, p: 'dots', c: [OCHRE, NAVY] },
+  { id: 'navy-meridians', x: 0.3, y: 0.68, r: 0.044, p: 'meridians', c: [NAVY, CREAM] },
+  { id: 'red-stars', x: 0.12, y: 0.79, r: 0.04, p: 'stars', c: [RED, GOLD] },
 ];
 
+/** Baubles painted by hand with glitter, baked into full material maps. */
+const GLITTERED: Partial<
+  Record<Pattern, { paint: () => GlitterMaps; sheen: number; sheenColor: number }>
+> = {
+  jj: { paint: paintJJBauble, sheen: 0.4, sheenColor: 0xd8f0b0 },
+  streaks: { paint: paintStreaksBauble, sheen: 0.25, sheenColor: 0xd4d6da },
+};
+
+export const DEFAULT_LAYOUT: Layout = Object.fromEntries(
+  BAUBLES.map(({ id, x, y }) => [id, { x, y }])
+);
+
 const STRING = 0.03;
+/** How far below its hanging point a bauble's centre sits, in tree units. */
+const drop = (r: number) => STRING + 1.38 * r;
 const clamp = (v: number, m: number) => Math.max(-m, Math.min(m, v));
+const round = (v: number) => Math.round(v * 10000) / 10000;
 
 function star(ctx: CanvasRenderingContext2D, x: number, y: number, R: number, rot: number) {
   ctx.beginPath();
@@ -281,6 +330,42 @@ function paintTexture(def: BaubleDef) {
   return cv;
 }
 
+/** A tier's outline, mapped from tree units by X and Y. */
+function tierPath(t: Tier, X: (u: number) => number, Y: (v: number) => number) {
+  const p = new Path2D();
+  const h = t.y1 - t.y0;
+  const { wt, wb } = t;
+  const tw = Math.max(wt, 0.006);
+  const ty = t.y0 + (wt ? 0 : 0.006);
+  p.moveTo(X(-tw), Y(ty));
+  p.quadraticCurveTo(X(0), Y(t.y0 - h * (wt ? 0.06 : 0.03)), X(tw), Y(ty));
+  p.bezierCurveTo(
+    X(wt + (wb - wt) * 0.3),
+    Y(t.y0 + h * 0.32),
+    X(wb * 1.04),
+    Y(t.y1 - h * 0.5),
+    X(wb),
+    Y(t.y1 - h * 0.13)
+  );
+  p.quadraticCurveTo(X(wb * 1.02), Y(t.y1 + h * 0.03), X(wb * 0.84), Y(t.y1 + h * 0.01));
+  let prev = wb * 0.84;
+  for (const s of t.scallops) {
+    p.quadraticCurveTo(X((prev + s.x) / 2), Y(t.y1 + h * s.dip), X(s.x), Y(t.y1 + h * s.lift));
+    prev = s.x;
+  }
+  p.quadraticCurveTo(X(-wb * 1.02), Y(t.y1 + h * 0.03), X(-wb), Y(t.y1 - h * 0.13));
+  p.bezierCurveTo(
+    X(-wb * 1.04),
+    Y(t.y1 - h * 0.5),
+    X(-wt - (wb - wt) * 0.3),
+    Y(t.y0 + h * 0.32),
+    X(-tw),
+    Y(ty)
+  );
+  p.closePath();
+  return p;
+}
+
 function initThree(canvas: HTMLCanvasElement, reduced: boolean): Three {
   const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
   const scene = new THREE.Scene();
@@ -324,7 +409,9 @@ function initThree(canvas: HTMLCanvasElement, reduced: boolean): Three {
   key.position.set(-1, 1.4, 1.6);
   scene.add(key, new THREE.AmbientLight(0xffffff, 0.12 * Math.PI));
 
+  // Bare until a layout arrives.
   const root = new THREE.Group();
+  root.visible = false;
   scene.add(root);
 
   const sphereGeo = new THREE.SphereGeometry(1, 64, 48);
@@ -365,18 +452,46 @@ function initThree(canvas: HTMLCanvasElement, reduced: boolean): Three {
   const aniso = renderer.capabilities.getMaxAnisotropy();
   const rnd = mulberry(3);
   const baubles = BAUBLES.map((def): Bauble => {
-    const tex = new THREE.CanvasTexture(paintTexture(def));
-    tex.colorSpace = THREE.SRGBColorSpace;
-    tex.anisotropy = aniso;
-    const metal = def.p === 'gold';
-    const mat = new THREE.MeshPhysicalMaterial({
-      map: tex,
-      roughness: metal ? 0.24 : 0.3,
-      metalness: metal ? 0.85 : 0.04,
-      clearcoat: 1,
-      clearcoatRoughness: 0.06,
-    });
-    disposables.push(tex, mat);
+    let mat: THREE.MeshPhysicalMaterial;
+    const glitter = GLITTERED[def.p];
+    if (glitter) {
+      // Glass with glitter: the maps carry the colour, the grain and which parts are metal.
+      const maps = glitter.paint();
+      const tex = (cv: HTMLCanvasElement) => {
+        const t = new THREE.CanvasTexture(cv);
+        t.anisotropy = aniso;
+        disposables.push(t);
+        return t;
+      };
+      const map = tex(maps.map);
+      map.colorSpace = THREE.SRGBColorSpace;
+      const rm = tex(maps.roughnessMetalnessMap);
+      mat = new THREE.MeshPhysicalMaterial({
+        map,
+        normalMap: tex(maps.normalMap),
+        roughnessMap: rm,
+        metalnessMap: rm,
+        roughness: 1,
+        metalness: 1,
+        sheen: glitter.sheen,
+        sheenRoughness: 0.5,
+        sheenColor: new THREE.Color(glitter.sheenColor),
+      });
+    } else {
+      const tex = new THREE.CanvasTexture(paintTexture(def));
+      tex.colorSpace = THREE.SRGBColorSpace;
+      tex.anisotropy = aniso;
+      const metal = def.p === 'gold';
+      mat = new THREE.MeshPhysicalMaterial({
+        map: tex,
+        roughness: metal ? 0.24 : 0.3,
+        metalness: metal ? 0.85 : 0.04,
+        clearcoat: 1,
+        clearcoatRoughness: 0.06,
+      });
+      disposables.push(tex);
+    }
+    disposables.push(mat);
 
     const r = def.r;
     const pivot = new THREE.Group();
@@ -403,6 +518,8 @@ function initThree(canvas: HTMLCanvasElement, reduced: boolean): Three {
 
     return {
       def,
+      x: def.x,
+      y: def.y,
       pivot,
       spinner,
       ball,
@@ -431,10 +548,10 @@ function initThree(canvas: HTMLCanvasElement, reduced: boolean): Three {
 }
 
 /**
- * Mounts the tree into `stage` (a positioned element) and returns a cleanup
- * function, so it can be used directly as a Svelte attachment.
+ * Mounts the tree into `stage` (a positioned element), bare until it is given
+ * a layout, and returns a handle to arrange it and to tear it down.
  */
-export function mountGlassFir(stage: HTMLElement) {
+export function mountGlassFir(stage: HTMLElement, options: GlassFirOptions = {}): GlassFir {
   const [treeCanvas, glCanvas] = ['tree', 'gl'].map((name) => {
     const cv = document.createElement('canvas');
     cv.dataset.layer = name;
@@ -456,41 +573,6 @@ export function mountGlassFir(stage: HTMLElement) {
 
   const X = (u: number) => cx + u * TH;
   const Y = (v: number) => top + v * TH;
-
-  function tierPath(t: Tier) {
-    const p = new Path2D();
-    const h = t.y1 - t.y0;
-    const { wt, wb } = t;
-    const tw = Math.max(wt, 0.006);
-    const ty = t.y0 + (wt ? 0 : 0.006);
-    p.moveTo(X(-tw), Y(ty));
-    p.quadraticCurveTo(X(0), Y(t.y0 - h * (wt ? 0.06 : 0.03)), X(tw), Y(ty));
-    p.bezierCurveTo(
-      X(wt + (wb - wt) * 0.3),
-      Y(t.y0 + h * 0.32),
-      X(wb * 1.04),
-      Y(t.y1 - h * 0.5),
-      X(wb),
-      Y(t.y1 - h * 0.13)
-    );
-    p.quadraticCurveTo(X(wb * 1.02), Y(t.y1 + h * 0.03), X(wb * 0.84), Y(t.y1 + h * 0.01));
-    let prev = wb * 0.84;
-    for (const s of t.scallops) {
-      p.quadraticCurveTo(X((prev + s.x) / 2), Y(t.y1 + h * s.dip), X(s.x), Y(t.y1 + h * s.lift));
-      prev = s.x;
-    }
-    p.quadraticCurveTo(X(-wb * 1.02), Y(t.y1 + h * 0.03), X(-wb), Y(t.y1 - h * 0.13));
-    p.bezierCurveTo(
-      X(-wb * 1.04),
-      Y(t.y1 - h * 0.5),
-      X(-wt - (wb - wt) * 0.3),
-      Y(t.y0 + h * 0.32),
-      X(-tw),
-      Y(ty)
-    );
-    p.closePath();
-    return p;
-  }
 
   function drawTree() {
     const ctx = treeCtx;
@@ -567,6 +649,10 @@ export function mountGlassFir(stage: HTMLElement) {
     three = null;
   }
 
+  function place(b: Bauble) {
+    b.pivot.position.set(b.x * TH, -b.y * TH, 0);
+  }
+
   function layout() {
     const rect = stage.getBoundingClientRect();
     W = rect.width;
@@ -578,7 +664,7 @@ export function mountGlassFir(stage: HTMLElement) {
     top = (H - 1.08 * TH) / 2 + 0.07 * TH;
     canvases.tree.width = Math.round(W * dpr);
     canvases.tree.height = Math.round(H * dpr);
-    paths = TIERS.map(tierPath);
+    paths = TIERS.map((t) => tierPath(t, X, Y));
     drawTree();
 
     if (three) {
@@ -593,13 +679,59 @@ export function mountGlassFir(stage: HTMLElement) {
       camera.updateProjectionMatrix();
       root.position.set(cx - W / 2, H / 2 - top, 0);
       for (const b of baubles) {
-        b.pivot.position.set(b.def.x * TH, -b.def.y * TH, 0);
+        place(b);
         b.pivot.scale.setScalar(TH);
       }
     }
   }
 
+  // ---------- The tree's silhouette ----------
+  // Tiers traced at a fixed scale, so a point in tree units can be tested whatever the stage's size.
+  const SIL = 1000;
+  const silhouette = TIERS.map((t) =>
+    tierPath(
+      t,
+      (u) => u * SIL,
+      (v) => v * SIL
+    )
+  );
+  const silCtx = document.createElement('canvas').getContext('2d')!;
+  const inside = (u: number, v: number) =>
+    silhouette.some((p) => silCtx.isPointInPath(p, u * SIL, v * SIL));
+
+  /**
+   * Moves a bauble's centre towards (u, v) in tree units, as far as it can go
+   * along the way without leaving the tree. Returns whether it moved.
+   */
+  function moveCentre(b: Bauble, u: number, v: number) {
+    const d = drop(b.def.r);
+    const fromU = b.x;
+    const fromV = b.y + d;
+    let lo = 0;
+    let hi = 1;
+    if (!inside(u, v)) {
+      for (let i = 0; i < 10; i++) {
+        const mid = (lo + hi) / 2;
+        if (inside(fromU + (u - fromU) * mid, fromV + (v - fromV) * mid)) lo = mid;
+        else hi = mid;
+      }
+      hi = lo;
+    }
+    const nx = fromU + (u - fromU) * hi;
+    const ny = fromV + (v - fromV) * hi - d;
+    if (Math.abs(nx - b.x) < 1e-6 && Math.abs(ny - b.y) < 1e-6) return false;
+    b.szv += clamp((nx - b.x) * 40, 1.5);
+    b.x = nx;
+    b.y = ny;
+    if (TH) place(b);
+    options.onMove?.(b.def.id, { x: round(b.x), y: round(b.y) });
+    return true;
+  }
+
   // ---------- Interaction ----------
+  let editing = false;
+  const shown = () => !!three?.root.visible;
+
   const v3 = new THREE.Vector3();
   function project() {
     if (!three) return;
@@ -612,7 +744,7 @@ export function mountGlassFir(stage: HTMLElement) {
   }
 
   const hit = (x: number, y: number) => {
-    if (!three) return null;
+    if (!three || !shown()) return null;
     let best: Bauble | null = null;
     let bd = Infinity;
     for (const b of three.baubles) {
@@ -628,6 +760,8 @@ export function mountGlassFir(stage: HTMLElement) {
   type Point = { x: number; y: number; t: number };
   let last: Point | null = null;
   let grabbed: Bauble | null = null;
+  // In edit mode, where on the grabbed bauble the pointer holds it, from its centre in px.
+  let hold = { x: 0, y: 0 };
   const local = (e: PointerEvent): Point => {
     const r = stage.getBoundingClientRect();
     return { x: e.clientX - r.left, y: e.clientY - r.top, t: e.timeStamp };
@@ -638,6 +772,9 @@ export function mountGlassFir(stage: HTMLElement) {
     last = p;
     grabbed = hit(p.x, p.y);
     if (grabbed) {
+      if (editing) {
+        hold = { x: p.x - X(grabbed.x), y: p.y - Y(grabbed.y + drop(grabbed.def.r)) };
+      }
       stage.setPointerCapture(e.pointerId);
       stage.style.cursor = 'grabbing';
     }
@@ -646,6 +783,12 @@ export function mountGlassFir(stage: HTMLElement) {
   const onPointerMove = (e: PointerEvent) => {
     const p = local(e);
     if (!three) return;
+    if (editing) {
+      last = p;
+      if (grabbed) moveCentre(grabbed, (p.x - hold.x - cx) / TH, (p.y - hold.y - top) / TH);
+      else if (e.pointerType === 'mouse') stage.style.cursor = hit(p.x, p.y) ? 'grab' : 'default';
+      return;
+    }
     if (!last || (e.pointerType !== 'mouse' && e.buttons === 0)) {
       last = p;
       return;
@@ -687,8 +830,36 @@ export function mountGlassFir(stage: HTMLElement) {
     ArrowUp: [0, 0, -0.5],
     ArrowDown: [0, 0, 0.5],
   };
+  const STEPS: Record<string, [number, number]> = {
+    ArrowLeft: [-1, 0],
+    ArrowRight: [1, 0],
+    ArrowUp: [0, -1],
+    ArrowDown: [0, 1],
+  };
+  // The bauble picked with [ and ] in edit mode.
+  let picked = 0;
+  const labelOf = (b: Bauble) => `${b.def.id.replace('-', ' ')} bauble`;
+
   const onKeyDown = (e: KeyboardEvent) => {
-    if (!three) return;
+    if (!three || !shown()) return;
+    if (editing) {
+      const { baubles } = three;
+      if (e.key === '[' || e.key === ']') {
+        e.preventDefault();
+        picked = (picked + (e.key === ']' ? 1 : -1) + baubles.length) % baubles.length;
+        const b = baubles[picked];
+        b.szv += 0.6;
+        options.onPick?.(labelOf(b));
+        return;
+      }
+      const step = STEPS[e.key];
+      if (!step) return;
+      e.preventDefault();
+      const b = baubles[picked];
+      const size = e.shiftKey ? 0.02 : 0.005;
+      moveCentre(b, b.x + step[0] * size, b.y + drop(b.def.r) + step[1] * size);
+      return;
+    }
     const k = KEYS[e.key];
     if (!k) return;
     e.preventDefault();
@@ -715,7 +886,7 @@ export function mountGlassFir(stage: HTMLElement) {
     const t = now / 1000;
     if (three) {
       for (const b of three.baubles) {
-        if (b !== grabbed) {
+        if (b !== grabbed || editing) {
           b.spinVel += (b.base - b.spinVel) * (1 - Math.exp(-0.55 * dt));
           b.spin += b.spinVel * dt;
         }
@@ -748,35 +919,65 @@ export function mountGlassFir(stage: HTMLElement) {
   const darkQuery = matchMedia('(prefers-color-scheme: dark)');
   darkQuery.addEventListener('change', redraw);
 
-  // Opening: a wave of turning glass runs down the tree.
-  const timers: number[] = [];
-  if (three && !reduced) {
+  // Opening: a wave of turning glass runs down the tree as the baubles appear.
+  let timers: number[] = [];
+  function wave() {
+    if (!three || reduced) return;
     for (const b of three.baubles) {
       timers.push(
         window.setTimeout(
           () => {
             b.spinVel += 7 * (b.base < 0 ? -1 : 1);
-            b.szv += 0.5 * (b.def.x < 0 ? -1 : 1);
+            b.szv += 0.5 * (b.x < 0 ? -1 : 1);
           },
-          300 + b.def.y * 1100
+          300 + b.y * 1100
         )
       );
     }
   }
   raf = requestAnimationFrame(frame);
 
-  return () => {
-    cancelAnimationFrame(raf);
-    timers.forEach(clearTimeout);
-    resizeObserver.disconnect();
-    darkQuery.removeEventListener('change', redraw);
-    stage.removeEventListener('pointerdown', onPointerDown);
-    stage.removeEventListener('pointermove', onPointerMove);
-    stage.removeEventListener('pointerup', release);
-    stage.removeEventListener('pointercancel', release);
-    stage.removeEventListener('pointerleave', onPointerLeave);
-    stage.removeEventListener('keydown', onKeyDown);
-    three?.dispose();
-    for (const cv of [treeCanvas, glCanvas]) cv.remove();
+  return {
+    setLayout(next) {
+      if (!three) return;
+      const wasShown = shown();
+      three.root.visible = !!next;
+      if (!next) {
+        timers.forEach(clearTimeout);
+        timers = [];
+        grabbed = null;
+        return;
+      }
+      for (const b of three.baubles) {
+        const p = next[b.def.id] ?? DEFAULT_LAYOUT[b.def.id];
+        // Moves made here come back rounded; only a real change (load, discard) moves a bauble.
+        if (Math.abs(b.x - p.x) < 2e-4 && Math.abs(b.y - p.y) < 2e-4) continue;
+        b.x = p.x;
+        b.y = p.y;
+        if (TH) place(b);
+        if (wasShown) b.szv += 0.4;
+      }
+      if (!wasShown) wave();
+    },
+    setEditing(on) {
+      editing = on;
+      grabbed = null;
+      last = null;
+      stage.style.cursor = 'default';
+    },
+    destroy() {
+      cancelAnimationFrame(raf);
+      timers.forEach(clearTimeout);
+      resizeObserver.disconnect();
+      darkQuery.removeEventListener('change', redraw);
+      stage.removeEventListener('pointerdown', onPointerDown);
+      stage.removeEventListener('pointermove', onPointerMove);
+      stage.removeEventListener('pointerup', release);
+      stage.removeEventListener('pointercancel', release);
+      stage.removeEventListener('pointerleave', onPointerLeave);
+      stage.removeEventListener('keydown', onKeyDown);
+      three?.dispose();
+      for (const cv of [treeCanvas, glCanvas]) cv.remove();
+    },
   };
 }

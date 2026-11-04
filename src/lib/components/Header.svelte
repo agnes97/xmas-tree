@@ -1,5 +1,6 @@
 <script lang="ts">
   import { auth } from '../auth.svelte';
+  import { tree } from '../tree.svelte';
 
   type Props = {
     onLoginClick: () => void;
@@ -13,8 +14,28 @@
 
   {#if auth.isAuthenticated && auth.user}
     <div class="user">
-      <span>Logged in as <strong>{auth.user.name}</strong></span>
-      <button type="button" onclick={() => auth.logout()}>Logout</button>
+      {#if tree.isEditing}
+        {#if tree.error}
+          <span class="error" role="alert">{tree.error}</span>
+        {/if}
+        <button
+          type="button"
+          class="primary"
+          disabled={!tree.isDirty || tree.status === 'saving'}
+          onclick={() => tree.save()}
+        >
+          {tree.status === 'saving' ? 'Saving…' : 'Save'}
+        </button>
+        <button type="button" disabled={tree.status === 'saving'} onclick={() => tree.discard()}>
+          Discard
+        </button>
+      {:else}
+        <span>Logged in as <strong>{auth.user.name}</strong></span>
+        <button type="button" disabled={tree.status !== 'ready'} onclick={() => tree.edit()}>
+          Edit
+        </button>
+        <button type="button" onclick={() => auth.logout()}>Logout</button>
+      {/if}
     </div>
   {:else if auth.status === 'unauthenticated'}
     <button type="button" onclick={onLoginClick}>Login</button>
@@ -43,8 +64,15 @@
 
   .user {
     display: flex;
+    flex-wrap: wrap;
     align-items: center;
-    gap: 1rem;
+    justify-content: flex-end;
+    gap: 0.75rem 1rem;
+  }
+
+  .error {
+    color: var(--danger);
+    font-size: 0.875rem;
   }
 
   strong {
@@ -61,8 +89,18 @@
     cursor: pointer;
   }
 
-  button:hover {
+  button:hover:not(:disabled),
+  button.primary:not(:disabled) {
     background: var(--accent);
     color: var(--on-accent);
+  }
+
+  button.primary:hover:not(:disabled) {
+    filter: brightness(1.1);
+  }
+
+  button:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
   }
 </style>

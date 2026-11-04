@@ -1,23 +1,62 @@
 <script lang="ts">
-  import { mountGlassFir } from '../tree/glassFir';
+  import type { Attachment } from 'svelte/attachments';
+  import { auth } from '../auth.svelte';
+  import { tree } from '../tree.svelte';
+  import { mountGlassFir, type GlassFir } from '../tree/glassFir';
+
+  let fir = $state.raw<GlassFir>();
+  let announcement = $state('');
+
+  const attach: Attachment<HTMLElement> = (stage) => {
+    const handle = mountGlassFir(stage, {
+      onMove: (id, position) => tree.move(id, position),
+      onPick: (label) => (announcement = label),
+    });
+    fir = handle;
+    return () => {
+      handle.destroy();
+      fir = undefined;
+    };
+  };
+
+  $effect(() => fir?.setLayout(tree.layout));
+  $effect(() => fir?.setEditing(tree.isEditing));
+
+  const intro = $derived.by(() => {
+    if (tree.isEditing) {
+      return 'Drag a bauble to move it; it stays on the branches. Save when it looks right.';
+    }
+    if (tree.layout) {
+      return 'Eleven painted glass baubles hang on the fir. Sweep across the branches to set them turning, or grab one and spin it.';
+    }
+    if (auth.status === 'unauthenticated') return 'Log in to hang your baubles on the fir.';
+    return '';
+  });
+
+  const label = $derived(
+    tree.isEditing
+      ? 'Illustrated Christmas tree in edit mode. Drag a bauble to move it, or press [ and ] to pick one and the arrow keys to move it.'
+      : tree.layout
+        ? 'Illustrated Christmas tree with eleven glass baubles. Left and right arrow keys spin them, up and down swing them.'
+        : 'Illustrated Christmas tree, bare until you log in.'
+  );
 </script>
 
 <section class="fir">
   <div class="bar">
-    <p>
-      Eleven painted glass baubles hang on the fir. Sweep across the branches to set them
-      turning, or grab one and spin it.
-    </p>
+    <p>{intro}</p>
   </div>
 
   <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
   <div
-    {@attach mountGlassFir}
-    class="stage"
+    {@attach attach}
+    class={['stage', tree.isEditing && 'editing']}
     role="img"
     tabindex="0"
-    aria-label="Illustrated Christmas tree with eleven glass baubles. Left and right arrow keys spin them, up and down swing them."
+    aria-label={label}
   ></div>
+
+  <p class="visually-hidden" aria-live="polite">{tree.isEditing ? announcement : ''}</p>
 </section>
 
 <style>
@@ -47,6 +86,7 @@
   }
 
   .bar p {
+    min-height: 1lh;
     margin: 0;
     max-width: 46ch;
     font-size: 15px;
@@ -61,6 +101,12 @@
     cursor: default;
   }
 
+  .stage.editing {
+    outline: 2px dashed color-mix(in srgb, var(--title) 55%, transparent);
+    outline-offset: -12px;
+    border-radius: 24px;
+  }
+
   .stage:focus-visible {
     box-shadow: inset 0 0 0 3px var(--title);
   }
@@ -71,6 +117,15 @@
     width: 100%;
     height: 100%;
     display: block;
+  }
+
+  .visually-hidden {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
   }
 
   @media (max-width: 560px) {
