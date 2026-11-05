@@ -2,13 +2,14 @@ import * as THREE from 'three';
 import { mergeGeometries, mergeVertices } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { paintCopperBauble } from './copperBauble';
 import { paintJJBauble } from './jjBauble';
+import { HEAD, songbirdMesh } from './songbird';
 import { paintStreaksBauble } from './streaksBauble';
 import { paintSwirlsBauble } from './swirlsBauble';
 import type { GlitterMaps } from './sphereMaps';
 
 /**
- * The Glass Fir: a 2D-canvas fir with eleven painted
- * glass baubles rendered in WebGL above it that spin and swing on interaction.
+ * The Glass Fir: a 2D-canvas fir with ten painted glass baubles and a glass
+ * songbird rendered in WebGL above it that spin and swing on interaction.
  *
  * Coordinates for the tree and baubles are in units of the tree's own height.
  */
@@ -22,7 +23,7 @@ type Tier = {
   scallops: { x: number; dip: number; lift: number }[];
 };
 
-type Pattern = 'jj' | 'streaks' | 'swirls' | 'copper' | 'number';
+type Pattern = 'jj' | 'streaks' | 'swirls' | 'copper' | 'number' | 'bird';
 
 type BaubleDef = {
   id: string;
@@ -32,6 +33,8 @@ type BaubleDef = {
   p: Pattern;
   /** The number painted on a numbered bauble. */
   n?: number;
+  /** What to call it when it is picked, if not `<id> bauble`. */
+  label?: string;
 };
 
 /** Where a bauble hangs from, in units of the tree's height: x from the trunk, y down from the top. */
@@ -117,12 +120,13 @@ const numbered = (n: number, id: string, x: number, y: number, r: number): Baubl
   n,
 });
 
-// The numbered baubles keep their original ids so saved layouts still place them.
+// The numbered baubles keep their original ids so saved layouts still place them; the
+// songbird took the place of number 1, so it keeps that one's id. Its `r` is one bird unit.
 export const BAUBLES: BaubleDef[] = [
   { id: 'lime-jj', x: 0.015, y: 0.13, r: 0.042, p: 'jj' },
   { id: 'burgundy-swirls', x: -0.12, y: 0.29, r: 0.037, p: 'swirls' },
   { id: 'grey-streaks', x: 0.145, y: 0.33, r: 0.04, p: 'streaks' },
-  numbered(1, 'gold', -0.01, 0.42, 0.034),
+  { id: 'gold', x: -0.01, y: 0.41, r: 0.045, p: 'bird', label: 'glass songbird' },
   { id: 'copper-winter', x: -0.23, y: 0.5, r: 0.042, p: 'copper' },
   numbered(2, 'cream-stripes', 0.215, 0.52, 0.038),
   numbered(3, 'teal-flakes', 0.03, 0.585, 0.045),
@@ -435,9 +439,13 @@ function initThree(canvas: HTMLCanvasElement, reduced: boolean): Three {
   const aniso = renderer.capabilities.getMaxAnisotropy();
   const rnd = mulberry(3);
   const baubles = BAUBLES.map((def): Bauble => {
-    let mat: THREE.MeshPhysicalMaterial;
+    let ball: THREE.Mesh;
     const glitter = GLITTERED[def.p];
-    if (glitter) {
+    if (def.p === 'bird') {
+      const bird = songbirdMesh();
+      ball = bird.mesh;
+      disposables.push(bird);
+    } else if (glitter) {
       // Glass with glitter: the maps carry the colour, the grain and which parts are metal.
       const maps = glitter.paint();
       const tex = (cv: HTMLCanvasElement) => {
@@ -449,7 +457,7 @@ function initThree(canvas: HTMLCanvasElement, reduced: boolean): Three {
       const map = tex(maps.map);
       map.colorSpace = THREE.SRGBColorSpace;
       const rm = tex(maps.roughnessMetalnessMap);
-      mat = new THREE.MeshPhysicalMaterial({
+      const mat = new THREE.MeshPhysicalMaterial({
         map,
         normalMap: tex(maps.normalMap),
         roughnessMap: rm,
@@ -462,6 +470,8 @@ function initThree(canvas: HTMLCanvasElement, reduced: boolean): Three {
         clearcoat: glitter.clearcoat ?? 0,
         clearcoatRoughness: 0.06,
       });
+      disposables.push(mat);
+      ball = new THREE.Mesh(sphereGeo, mat);
     } else {
       const cv = document.createElement('canvas');
       paintNumber(cv, def);
@@ -476,18 +486,20 @@ function initThree(canvas: HTMLCanvasElement, reduced: boolean): Three {
         },
         () => {}
       );
-      mat = new THREE.MeshPhysicalMaterial({
+      const mat = new THREE.MeshPhysicalMaterial({
         map: tex,
         roughness: 0.18,
         metalness: 0.04,
         clearcoat: 1,
         clearcoatRoughness: 0.06,
       });
-      disposables.push(tex);
+      disposables.push(tex, mat);
+      ball = new THREE.Mesh(sphereGeo, mat);
     }
-    disposables.push(mat);
 
     const r = def.r;
+    // The bird wears a smaller cap, sized to its head.
+    const capR = def.p === 'bird' ? HEAD * r : r;
     const pivot = new THREE.Group();
     const str = new THREE.Mesh(stringGeo, stringMat);
     str.scale.set(0.0011, STRING, 0.0011);
@@ -495,16 +507,16 @@ function initThree(canvas: HTMLCanvasElement, reduced: boolean): Three {
     const spinner = new THREE.Group();
     spinner.position.y = -STRING;
     const loop = new THREE.Mesh(loopGeo, capMat);
-    loop.scale.setScalar(r);
-    loop.position.y = -0.09 * r;
+    loop.scale.setScalar(capR);
+    loop.position.y = -0.09 * capR;
     const cap = new THREE.Mesh(capGeo, capMat);
-    cap.scale.setScalar(r);
-    const ball = new THREE.Mesh(sphereGeo, mat);
+    cap.scale.setScalar(capR);
     ball.scale.setScalar(r);
     ball.position.y = -1.38 * r;
     spinner.add(loop, cap, ball);
     const shadow = new THREE.Mesh(planeGeo, shadowMat);
-    shadow.scale.setScalar(r * 2.7);
+    if (def.p === 'bird') shadow.scale.set(r * 2.2, r * 3.6, 1);
+    else shadow.scale.setScalar(r * 2.7);
     shadow.position.set(r * 0.4, -STRING - 1.38 * r - r * 0.3, -r * 1.2);
     pivot.add(str, spinner, shadow);
     root.add(pivot);
@@ -515,7 +527,7 @@ function initThree(canvas: HTMLCanvasElement, reduced: boolean): Three {
       y: def.y,
       pivot,
       spinner,
-      ball,
+      ball: ball,
       spin: rnd() * Math.PI * 2,
       spinVel: 0,
       base: reduced ? 0 : (rnd() < 0.5 ? -1 : 1) * (0.18 + rnd() * 0.18),
@@ -832,7 +844,8 @@ export function mountGlassFir(stage: HTMLElement, options: GlassFirOptions = {})
   // The bauble picked with [ and ] in edit mode.
   let picked = 0;
   const labelOf = (b: Bauble) =>
-    b.def.n ? `black bauble number ${b.def.n}` : `${b.def.id.replace('-', ' ')} bauble`;
+    b.def.label ??
+    (b.def.n ? `black bauble number ${b.def.n}` : `${b.def.id.replace('-', ' ')} bauble`);
 
   const onKeyDown = (e: KeyboardEvent) => {
     if (!three || !shown()) return;
