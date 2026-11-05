@@ -1,6 +1,9 @@
 import * as THREE from 'three';
+import { mergeGeometries, mergeVertices } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
+import { paintCopperBauble } from './copperBauble';
 import { paintJJBauble } from './jjBauble';
 import { paintStreaksBauble } from './streaksBauble';
+import { paintSwirlsBauble } from './swirlsBauble';
 import type { GlitterMaps } from './sphereMaps';
 
 /**
@@ -19,17 +22,7 @@ type Tier = {
   scallops: { x: number; dip: number; lift: number }[];
 };
 
-type Pattern =
-  | 'jj'
-  | 'streaks'
-  | 'meridians'
-  | 'stars'
-  | 'dots'
-  | 'gold'
-  | 'zigzag'
-  | 'stripes'
-  | 'flakes'
-  | 'bands';
+type Pattern = 'jj' | 'streaks' | 'swirls' | 'copper' | 'number';
 
 type BaubleDef = {
   id: string;
@@ -37,7 +30,8 @@ type BaubleDef = {
   y: number;
   r: number;
   p: Pattern;
-  c: string[];
+  /** The number painted on a numbered bauble. */
+  n?: number;
 };
 
 /** Where a bauble hangs from, in units of the tree's height: x from the trunk, y down from the top. */
@@ -113,36 +107,49 @@ const TIERS: Tier[] = [
   };
 });
 
-const RED = '#d8283c';
-const CREAM = '#f6efe2';
-const OCHRE = '#e9a62b';
-const TEAL = '#2f8f8a';
-const NAVY = '#22336b';
-const PINK = '#ec8fa0';
-const GOLD = '#f1c35a';
+/** A black glass bauble with a number on its front and back. */
+const numbered = (n: number, id: string, x: number, y: number, r: number): BaubleDef => ({
+  id,
+  x,
+  y,
+  r,
+  p: 'number',
+  n,
+});
 
+// The numbered baubles keep their original ids so saved layouts still place them.
 export const BAUBLES: BaubleDef[] = [
-  { id: 'lime-jj', x: 0.015, y: 0.13, r: 0.042, p: 'jj', c: [] },
-  { id: 'navy-stars', x: -0.12, y: 0.29, r: 0.037, p: 'stars', c: [NAVY, GOLD] },
-  { id: 'grey-streaks', x: 0.145, y: 0.33, r: 0.04, p: 'streaks', c: [] },
-  { id: 'gold', x: -0.01, y: 0.42, r: 0.034, p: 'gold', c: ['#d9ac52', '#9c6f22'] },
-  { id: 'ochre-zigzag', x: -0.23, y: 0.5, r: 0.042, p: 'zigzag', c: [OCHRE, RED, CREAM] },
-  { id: 'cream-stripes', x: 0.215, y: 0.52, r: 0.038, p: 'stripes', c: [CREAM, RED] },
-  { id: 'teal-flakes', x: 0.03, y: 0.585, r: 0.045, p: 'flakes', c: [TEAL, CREAM] },
-  { id: 'pink-bands', x: -0.31, y: 0.7, r: 0.046, p: 'bands', c: [PINK, RED, CREAM] },
-  { id: 'ochre-dots', x: -0.085, y: 0.72, r: 0.036, p: 'dots', c: [OCHRE, NAVY] },
-  { id: 'navy-meridians', x: 0.3, y: 0.68, r: 0.044, p: 'meridians', c: [NAVY, CREAM] },
-  { id: 'red-stars', x: 0.12, y: 0.79, r: 0.04, p: 'stars', c: [RED, GOLD] },
+  { id: 'lime-jj', x: 0.015, y: 0.13, r: 0.042, p: 'jj' },
+  { id: 'burgundy-swirls', x: -0.12, y: 0.29, r: 0.037, p: 'swirls' },
+  { id: 'grey-streaks', x: 0.145, y: 0.33, r: 0.04, p: 'streaks' },
+  numbered(1, 'gold', -0.01, 0.42, 0.034),
+  { id: 'copper-winter', x: -0.23, y: 0.5, r: 0.042, p: 'copper' },
+  numbered(2, 'cream-stripes', 0.215, 0.52, 0.038),
+  numbered(3, 'teal-flakes', 0.03, 0.585, 0.045),
+  numbered(4, 'pink-bands', -0.31, 0.7, 0.046),
+  numbered(5, 'ochre-dots', -0.085, 0.72, 0.036),
+  numbered(6, 'navy-meridians', 0.3, 0.68, 0.044),
+  numbered(7, 'red-stars', 0.12, 0.79, 0.04),
 ];
 
 /** Baubles painted by hand with glitter, baked into full material maps. */
 const GLITTERED: Partial<
-  Record<Pattern, { paint: () => GlitterMaps; sheen: number; sheenColor: number }>
+  Record<
+    Pattern,
+    {
+      paint: () => GlitterMaps;
+      sheen: number;
+      sheenColor: number;
+      /** Glossy glass gets a clear coat over the maps. */
+      clearcoat?: number;
+    }
+  >
 > = {
   jj: { paint: paintJJBauble, sheen: 0.4, sheenColor: 0xd8f0b0 },
   streaks: { paint: paintStreaksBauble, sheen: 0.25, sheenColor: 0xd4d6da },
+  swirls: { paint: paintSwirlsBauble, sheen: 0.25, sheenColor: 0xd05060 },
+  copper: { paint: paintCopperBauble, sheen: 0.3, sheenColor: 0xf0a070, clearcoat: 1 },
 };
-
 export const DEFAULT_LAYOUT: Layout = Object.fromEntries(
   BAUBLES.map(({ id, x, y }) => [id, { x, y }])
 );
@@ -163,171 +170,147 @@ function star(ctx: CanvasRenderingContext2D, x: number, y: number, R: number, ro
   ctx.closePath();
 }
 
-function paintTexture(def: BaubleDef) {
-  const cv = document.createElement('canvas');
+const NUMBER_FONT = "'Caprasimo', 'Cooper Black', Georgia, serif";
+
+/**
+ * Paints a numbered bauble into `cv`: black glass with the number in silver on
+ * its front and back, framed by a ring of dots so it reads as a medallion.
+ */
+function paintNumber(cv: HTMLCanvasElement, def: BaubleDef) {
   const Wt = 1024;
   const Ht = 512;
   cv.width = Wt;
   cv.height = Ht;
   const g = cv.getContext('2d')!;
-  const [a, b, c] = def.c;
-  const stretch = (y: number) => 1 / Math.max(0.3, Math.sin((Math.PI * y) / Ht));
-  const wrap = (x: number, fn: (x: number) => void) => {
-    fn(x - Wt);
-    fn(x);
-    fn(x + Wt);
-  };
-  g.fillStyle = a;
+  g.fillStyle = '#0d0d0f';
   g.fillRect(0, 0, Wt, Ht);
 
-  const starAt = (x: number, y: number, R: number) => {
-    const k = stretch(y);
+  // Lon 0 (facing the viewer) sits at u = 0.25 in SphereGeometry's UVs; the back at 0.75.
+  for (const u of [0.25, 0.75]) {
+    const x = u * Wt;
+    const y = Ht / 2;
+    g.strokeStyle = 'rgba(214, 218, 224, 0.55)';
+    g.lineWidth = 4;
     g.beginPath();
-    for (let i = 0; i < 10; i++) {
-      const ang = -Math.PI / 2 + (i * Math.PI) / 5;
-      const rr = i % 2 ? R * 0.45 : R;
-      g.lineTo(x + Math.cos(ang) * rr * k, y + Math.sin(ang) * rr);
-    }
-    g.fill();
-  };
-
-  switch (def.p) {
-    case 'dots': {
-      g.fillStyle = b;
-      [0.24, 0.37, 0.5, 0.63, 0.76].forEach((v, row) => {
-        const y = v * Ht;
-        const n = 10;
-        for (let i = 0; i < n; i++) {
-          const x = ((i + (row % 2) * 0.5) * Wt) / n;
-          wrap(x, (xx) => {
-            g.beginPath();
-            g.ellipse(xx, y, 17 * stretch(y), 17, 0, 0, Math.PI * 2);
-            g.fill();
-          });
-        }
-      });
-      break;
-    }
-    case 'stripes': {
-      g.fillStyle = b;
-      const period = Wt / 12;
-      for (let x = -Wt; x < Wt * 2; x += period) {
-        g.beginPath();
-        g.moveTo(x, 0);
-        g.lineTo(x + period * 0.45, 0);
-        g.lineTo(x + period * 0.45 + Ht * 0.8, Ht);
-        g.lineTo(x + Ht * 0.8, Ht);
-        g.fill();
-      }
-      break;
-    }
-    case 'zigzag': {
-      g.strokeStyle = b;
-      g.lineWidth = 28;
-      g.lineJoin = 'round';
+    g.arc(x, y, 104, 0, Math.PI * 2);
+    g.stroke();
+    g.fillStyle = 'rgba(214, 218, 224, 0.7)';
+    for (let i = 0; i < 24; i++) {
+      const a = (i * Math.PI * 2) / 24;
       g.beginPath();
-      const teeth = 12;
-      for (let i = 0; i <= teeth * 2; i++) {
-        g.lineTo((i * Wt) / (teeth * 2), Ht / 2 + (i % 2 ? 38 : -38));
-      }
-      g.stroke();
-      g.fillStyle = c;
-      g.fillRect(0, Ht / 2 - 92, Wt, 12);
-      g.fillRect(0, Ht / 2 + 80, Wt, 12);
-      break;
+      g.arc(x + Math.cos(a) * 122, y + Math.sin(a) * 122, 4, 0, Math.PI * 2);
+      g.fill();
     }
-    case 'meridians': {
-      g.fillStyle = b;
-      for (let i = 0; i < 8; i += 2) g.fillRect((i * Wt) / 8, 0, Wt / 8, Ht);
-      break;
-    }
-    case 'stars': {
-      g.fillStyle = b;
-      (
-        [
-          [0.3, 7],
-          [0.5, 8],
-          [0.7, 7],
-        ] as const
-      ).forEach(([v, n], row) => {
-        for (let i = 0; i < n; i++) {
-          wrap(((i + row * 0.5) * Wt) / n, (x) => starAt(x, v * Ht, 26));
-        }
-      });
-      break;
-    }
-    case 'flakes': {
-      g.strokeStyle = b;
-      g.lineWidth = 5;
-      g.lineCap = 'round';
-      (
-        [
-          [0.32, 8],
-          [0.5, 9],
-          [0.68, 8],
-        ] as const
-      ).forEach(([v, n], row) => {
-        for (let i = 0; i < n; i++) {
-          wrap(((i + row * 0.5) * Wt) / n, (x) => {
-            const y = v * Ht;
-            const k = stretch(y);
-            for (let s = 0; s < 6; s++) {
-              const ang = (s * Math.PI) / 3;
-              const dx = Math.cos(ang);
-              const dy = Math.sin(ang);
-              g.beginPath();
-              g.moveTo(x, y);
-              g.lineTo(x + dx * 24 * k, y + dy * 24);
-              g.stroke();
-              const mx = x + dx * 14 * k;
-              const my = y + dy * 14;
-              const p1 = ang + 0.7;
-              const p2 = ang - 0.7;
-              g.beginPath();
-              g.moveTo(mx, my);
-              g.lineTo(mx + Math.cos(p1) * 8 * k, my + Math.sin(p1) * 8);
-              g.moveTo(mx, my);
-              g.lineTo(mx + Math.cos(p2) * 8 * k, my + Math.sin(p2) * 8);
-              g.stroke();
-            }
-          });
-        }
-      });
-      break;
-    }
-    case 'bands': {
-      g.fillStyle = b;
-      g.fillRect(0, Ht * 0.38, Wt, Ht * 0.24);
-      g.fillStyle = c;
-      g.fillRect(0, Ht * 0.33, Wt, 10);
-      g.fillRect(0, Ht * 0.65, Wt, 10);
-      for (let i = 0; i < 16; i++) {
-        g.beginPath();
-        g.arc(((i + 0.5) * Wt) / 16, Ht / 2, 13, 0, Math.PI * 2);
-        g.fill();
-      }
-      break;
-    }
-    case 'gold': {
-      g.fillStyle = b;
-      g.fillRect(0, Ht / 2 - 26, Wt, 52);
-      g.fillStyle = a;
-      for (let i = 0; i < 24; i++) {
-        g.beginPath();
-        g.arc(((i + 0.5) * Wt) / 24, Ht / 2, 9, 0, Math.PI * 2);
-        g.fill();
-      }
-      break;
-    }
+    g.font = `150px ${NUMBER_FONT}`;
+    g.textAlign = 'center';
+    g.textBaseline = 'middle';
+    g.fillStyle = '#e4e7eb';
+    g.fillText(String(def.n), x, y + 8);
   }
 
   // A little brush grain so the glass reads as hand-painted.
   const r = mulberry(def.x * 1000 + def.y * 100);
   for (let i = 0; i < 1600; i++) {
-    g.fillStyle = r() < 0.5 ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.05)';
+    g.fillStyle = r() < 0.5 ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.05)';
     g.fillRect(r() * Wt, r() * Ht, 2 + r() * 4, 1 + r() * 2);
   }
-  return cv;
+}
+
+/**
+ * The silver cap every bauble wears, in units of the bauble's radius with the
+ * ball's centre 1.38 below the spinner: a fluted collar between beaded rims,
+ * a domed top, and a crown of leaves with bead tips lying on the glass.
+ */
+function capGeometry() {
+  const parts: THREE.BufferGeometry[] = [];
+  const BALL = -1.38;
+
+  const profile = [
+    [0.27, -0.4],
+    [0.31, -0.402],
+    [0.326, -0.39],
+    [0.33, -0.375],
+    [0.326, -0.36],
+    [0.305, -0.35],
+    [0.288, -0.344],
+    [0.29, -0.334],
+    [0.29, -0.246],
+    [0.288, -0.238],
+    [0.305, -0.232],
+    [0.313, -0.218],
+    [0.305, -0.204],
+    [0.282, -0.198],
+    [0.25, -0.188],
+    [0.19, -0.174],
+    [0.12, -0.165],
+    [0.05, -0.16],
+    [0.001, -0.159],
+  ].map(([x, y]) => new THREE.Vector2(x, y));
+  const collar = new THREE.LatheGeometry(profile, 120);
+  // Twelve flutes around the collar, fading out at its rims.
+  const pos = collar.attributes.position;
+  for (let i = 0; i < pos.count; i++) {
+    const y = pos.getY(i);
+    if (y < -0.334 || y > -0.246) continue;
+    const fade = Math.sin((Math.PI * (y + 0.334)) / 0.088);
+    const k = 1 - 0.07 * fade * (0.5 + 0.5 * Math.cos(12 * Math.atan2(pos.getZ(i), pos.getX(i))));
+    pos.setX(i, pos.getX(i) * k);
+    pos.setZ(i, pos.getZ(i) * k);
+  }
+  parts.push(collar);
+
+  // Beads around the upper rim and a collar bead under the loop.
+  for (let i = 0; i < 18; i++) {
+    const a = (i * Math.PI * 2) / 18;
+    const bead = new THREE.SphereGeometry(0.018, 8, 6);
+    bead.translate(Math.cos(a) * 0.315, -0.218, Math.sin(a) * 0.315);
+    parts.push(bead);
+  }
+  parts.push(new THREE.SphereGeometry(0.05, 16, 10).translate(0, -0.158, 0));
+
+  // Leaves lying on the glass below the rim, each ending in a bead.
+  const leaf = new THREE.SphereGeometry(1, 16, 10);
+  const m = new THREE.Matrix4();
+  for (let i = 0; i < 10; i++) {
+    const phi = ((i + 0.5) * Math.PI * 2) / 10;
+    const at = (theta: number, lift: number) =>
+      new THREE.Vector3(
+        Math.sin(theta) * Math.cos(phi),
+        Math.cos(theta),
+        Math.sin(theta) * Math.sin(phi)
+      )
+        .multiplyScalar(1 + lift)
+        .add(new THREE.Vector3(0, BALL, 0));
+    const theta = 0.4;
+    const n = new THREE.Vector3(
+      Math.sin(theta) * Math.cos(phi),
+      Math.cos(theta),
+      Math.sin(theta) * Math.sin(phi)
+    );
+    const t = new THREE.Vector3(
+      Math.cos(theta) * Math.cos(phi),
+      -Math.sin(theta),
+      Math.cos(theta) * Math.sin(phi)
+    );
+    const b = new THREE.Vector3().crossVectors(n, t);
+    m.makeBasis(b, n, t).setPosition(at(theta, 0));
+    parts.push(leaf.clone().scale(0.06, 0.018, 0.13).applyMatrix4(m));
+    parts.push(new THREE.SphereGeometry(0.026, 10, 8).translate(...at(0.54, 0.012).toArray()));
+  }
+  leaf.dispose();
+
+  // Positions only, welded, so the lathe's seam shades smoothly.
+  const bare = parts.map((p) => {
+    const g = p.toNonIndexed();
+    g.deleteAttribute('normal');
+    g.deleteAttribute('uv');
+    return g;
+  });
+  const merged = mergeVertices(mergeGeometries(bare)!, 1e-4);
+  bare.forEach((g) => g.dispose());
+  merged.computeVertexNormals();
+  parts.forEach((p) => p.dispose());
+  return merged;
 }
 
 /** A tier's outline, mapped from tree units by X and Y. */
@@ -415,11 +398,11 @@ function initThree(canvas: HTMLCanvasElement, reduced: boolean): Three {
   scene.add(root);
 
   const sphereGeo = new THREE.SphereGeometry(1, 64, 48);
-  const capGeo = new THREE.CylinderGeometry(0.27, 0.3, 0.24, 28);
+  const capGeo = capGeometry();
   const loopGeo = new THREE.TorusGeometry(0.1, 0.028, 10, 24);
   const stringGeo = new THREE.CylinderGeometry(1, 1, 1, 6);
   const planeGeo = new THREE.PlaneGeometry(1, 1);
-  const capMat = new THREE.MeshStandardMaterial({ color: 0xd2a752, metalness: 1, roughness: 0.32 });
+  const capMat = new THREE.MeshStandardMaterial({ color: 0xd0d4da, metalness: 1, roughness: 0.22 });
   const stringMat = new THREE.MeshBasicMaterial({ color: 0x4a3c2a });
 
   const sh = document.createElement('canvas');
@@ -476,16 +459,27 @@ function initThree(canvas: HTMLCanvasElement, reduced: boolean): Three {
         sheen: glitter.sheen,
         sheenRoughness: 0.5,
         sheenColor: new THREE.Color(glitter.sheenColor),
+        clearcoat: glitter.clearcoat ?? 0,
+        clearcoatRoughness: 0.06,
       });
     } else {
-      const tex = new THREE.CanvasTexture(paintTexture(def));
+      const cv = document.createElement('canvas');
+      paintNumber(cv, def);
+      const tex = new THREE.CanvasTexture(cv);
       tex.colorSpace = THREE.SRGBColorSpace;
       tex.anisotropy = aniso;
-      const metal = def.p === 'gold';
+      // Repaint once the display font has loaded, in case it wasn't ready yet.
+      document.fonts.load(`150px ${NUMBER_FONT}`).then(
+        () => {
+          paintNumber(cv, def);
+          tex.needsUpdate = true;
+        },
+        () => {}
+      );
       mat = new THREE.MeshPhysicalMaterial({
         map: tex,
-        roughness: metal ? 0.24 : 0.3,
-        metalness: metal ? 0.85 : 0.04,
+        roughness: 0.18,
+        metalness: 0.04,
         clearcoat: 1,
         clearcoatRoughness: 0.06,
       });
@@ -505,7 +499,6 @@ function initThree(canvas: HTMLCanvasElement, reduced: boolean): Three {
     loop.position.y = -0.09 * r;
     const cap = new THREE.Mesh(capGeo, capMat);
     cap.scale.setScalar(r);
-    cap.position.y = -0.29 * r;
     const ball = new THREE.Mesh(sphereGeo, mat);
     ball.scale.setScalar(r);
     ball.position.y = -1.38 * r;
@@ -838,7 +831,8 @@ export function mountGlassFir(stage: HTMLElement, options: GlassFirOptions = {})
   };
   // The bauble picked with [ and ] in edit mode.
   let picked = 0;
-  const labelOf = (b: Bauble) => `${b.def.id.replace('-', ' ')} bauble`;
+  const labelOf = (b: Bauble) =>
+    b.def.n ? `black bauble number ${b.def.n}` : `${b.def.id.replace('-', ' ')} bauble`;
 
   const onKeyDown = (e: KeyboardEvent) => {
     if (!three || !shown()) return;
