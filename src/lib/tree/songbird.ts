@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { raymarchConstants, raymarchedMesh } from './raymarched';
 
 /**
  * The frosted songbird: a glass bird ornament gripping a brown branch, raymarched
@@ -22,25 +23,12 @@ const CY = 0.64 - 1.38 * (1 - HEAD);
 const MIN = new THREE.Vector3(-0.6, -1.72, -0.55);
 const MAX = new THREE.Vector3(0.6, 1.03, 0.62);
 
-const f = (n: number) => n.toFixed(4);
-const v = (p: THREE.Vector3) => `vec3(${f(p.x)}, ${f(p.y)}, ${f(p.z)})`;
-
-const vertexShader = /* glsl */ `
-varying vec3 vPos;
-varying vec3 vCam;
-void main(){
-  vPos = position;
-  vCam = (inverse(modelMatrix) * vec4(cameraPosition, 1.0)).xyz;
-  gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
-}`;
-
 const fragmentShader = /* glsl */ `
 uniform mat4 projectionMatrix; uniform mat4 modelViewMatrix; uniform mat3 normalMatrix;
 uniform float uTime; uniform float uPx;
 varying vec3 vPos;
 varying vec3 vCam;
-const vec3 CY = vec3(0.0, ${f(CY)}, 0.0);
-const vec3 BMIN = ${v(MIN)}, BMAX = ${v(MAX)};
+${raymarchConstants(CY, MIN, MAX)}
 
 float hash(vec3 p){ p = fract(p * 0.3183099 + 0.1); p *= 17.0; return fract(p.x * p.y * p.z * (p.x + p.y + p.z)); }
 vec3 hash3(vec3 p){ return vec3(hash(p), hash(p + 17.13), hash(p + 31.71)); }
@@ -246,26 +234,4 @@ void main(){
  * The songbird's mesh: a box around the figure whose material raymarches the
  * bird inside it. Its origin is where a bauble's centre would be.
  */
-export function songbirdMesh() {
-  const size = new THREE.Vector3().subVectors(MAX, MIN);
-  const mid = new THREE.Vector3().addVectors(MIN, MAX).multiplyScalar(0.5);
-  const geometry = new THREE.BoxGeometry(size.x, size.y, size.z).translate(
-    mid.x,
-    mid.y - CY,
-    mid.z
-  );
-  const material = new THREE.ShaderMaterial({
-    vertexShader,
-    fragmentShader,
-    uniforms: { uTime: { value: 0 }, uPx: { value: 0.01 } },
-    alphaToCoverage: true,
-  });
-  const mesh = new THREE.Mesh(geometry, material);
-  const scale = new THREE.Vector3();
-  mesh.onBeforeRender = (renderer) => {
-    // One world unit is one CSS pixel at the tree's depth.
-    material.uniforms.uPx.value = 1 / (renderer.getPixelRatio() * mesh.getWorldScale(scale).x);
-    material.uniforms.uTime.value = performance.now() / 1000;
-  };
-  return { mesh, dispose: () => (geometry.dispose(), material.dispose()) };
-}
+export const songbirdMesh = () => raymarchedMesh(fragmentShader, CY, MIN, MAX);

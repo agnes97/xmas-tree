@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { mergeGeometries, mergeVertices } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { paintCopperBauble } from './copperBauble';
+import { HEART_CAP, frostedHeartMesh } from './frostedHeart';
 import { paintJJBauble } from './jjBauble';
 import { HEAD, songbirdMesh } from './songbird';
 import { paintStreaksBauble } from './streaksBauble';
@@ -8,8 +9,9 @@ import { paintSwirlsBauble } from './swirlsBauble';
 import type { GlitterMaps } from './sphereMaps';
 
 /**
- * The Glass Fir: a 2D-canvas fir with ten painted glass baubles and a glass
- * songbird rendered in WebGL above it that spin and swing on interaction.
+ * The Glass Fir: a 2D-canvas fir with nine painted glass baubles, a glass
+ * songbird and a frosted glass heart rendered in WebGL above it that spin and
+ * swing on interaction.
  *
  * Coordinates for the tree and baubles are in units of the tree's own height.
  */
@@ -23,7 +25,7 @@ type Tier = {
   scallops: { x: number; dip: number; lift: number }[];
 };
 
-type Pattern = 'jj' | 'streaks' | 'swirls' | 'copper' | 'number' | 'bird';
+type Pattern = 'jj' | 'streaks' | 'swirls' | 'copper' | 'number' | 'bird' | 'heart';
 
 type BaubleDef = {
   id: string;
@@ -121,7 +123,8 @@ const numbered = (n: number, id: string, x: number, y: number, r: number): Baubl
 });
 
 // The numbered baubles keep their original ids so saved layouts still place them; the
-// songbird took the place of number 1, so it keeps that one's id. Its `r` is one bird unit.
+// songbird took the place of number 1 and the heart that of number 3, so they keep those
+// ids. Their `r` is one bird or heart unit.
 export const BAUBLES: BaubleDef[] = [
   { id: 'lime-jj', x: 0.015, y: 0.13, r: 0.042, p: 'jj' },
   { id: 'burgundy-swirls', x: -0.12, y: 0.29, r: 0.037, p: 'swirls' },
@@ -129,7 +132,7 @@ export const BAUBLES: BaubleDef[] = [
   { id: 'gold', x: -0.01, y: 0.41, r: 0.045, p: 'bird', label: 'glass songbird' },
   { id: 'copper-winter', x: -0.23, y: 0.5, r: 0.042, p: 'copper' },
   numbered(2, 'cream-stripes', 0.215, 0.52, 0.038),
-  numbered(3, 'teal-flakes', 0.03, 0.585, 0.045),
+  { id: 'teal-flakes', x: 0.03, y: 0.585, r: 0.062, p: 'heart', label: 'frosted glass heart' },
   numbered(4, 'pink-bands', -0.31, 0.7, 0.046),
   numbered(5, 'ochre-dots', -0.085, 0.72, 0.036),
   numbered(6, 'navy-meridians', 0.3, 0.68, 0.044),
@@ -223,9 +226,10 @@ function paintNumber(cv: HTMLCanvasElement, def: BaubleDef) {
 /**
  * The silver cap every bauble wears, in units of the bauble's radius with the
  * ball's centre 1.38 below the spinner: a fluted collar between beaded rims,
- * a domed top, and a crown of leaves with bead tips lying on the glass.
+ * a domed top, and (unless `leaves` is false) a crown of leaves with bead tips
+ * lying on the glass.
  */
-function capGeometry() {
+function capGeometry(leaves = true) {
   const parts: THREE.BufferGeometry[] = [];
   const BALL = -1.38;
 
@@ -275,7 +279,7 @@ function capGeometry() {
   // Leaves lying on the glass below the rim, each ending in a bead.
   const leaf = new THREE.SphereGeometry(1, 16, 10);
   const m = new THREE.Matrix4();
-  for (let i = 0; i < 10; i++) {
+  for (let i = 0; i < (leaves ? 10 : 0); i++) {
     const phi = ((i + 0.5) * Math.PI * 2) / 10;
     const at = (theta: number, lift: number) =>
       new THREE.Vector3(
@@ -403,6 +407,7 @@ function initThree(canvas: HTMLCanvasElement, reduced: boolean): Three {
 
   const sphereGeo = new THREE.SphereGeometry(1, 64, 48);
   const capGeo = capGeometry();
+  const collarGeo = capGeometry(false);
   const loopGeo = new THREE.TorusGeometry(0.1, 0.028, 10, 24);
   const stringGeo = new THREE.CylinderGeometry(1, 1, 1, 6);
   const planeGeo = new THREE.PlaneGeometry(1, 1);
@@ -427,6 +432,7 @@ function initThree(canvas: HTMLCanvasElement, reduced: boolean): Three {
   disposables.push(
     sphereGeo,
     capGeo,
+    collarGeo,
     loopGeo,
     stringGeo,
     planeGeo,
@@ -445,6 +451,10 @@ function initThree(canvas: HTMLCanvasElement, reduced: boolean): Three {
       const bird = songbirdMesh();
       ball = bird.mesh;
       disposables.push(bird);
+    } else if (def.p === 'heart') {
+      const heart = frostedHeartMesh();
+      ball = heart.mesh;
+      disposables.push(heart);
     } else if (glitter) {
       // Glass with glitter: the maps carry the colour, the grain and which parts are metal.
       const maps = glitter.paint();
@@ -498,8 +508,8 @@ function initThree(canvas: HTMLCanvasElement, reduced: boolean): Three {
     }
 
     const r = def.r;
-    // The bird wears a smaller cap, sized to its head.
-    const capR = def.p === 'bird' ? HEAD * r : r;
+    // The bird wears a smaller cap, sized to its head; the heart a plain collar over its neck.
+    const capR = def.p === 'bird' ? HEAD * r : def.p === 'heart' ? HEART_CAP * r : r;
     const pivot = new THREE.Group();
     const str = new THREE.Mesh(stringGeo, stringMat);
     str.scale.set(0.0011, STRING, 0.0011);
@@ -509,13 +519,14 @@ function initThree(canvas: HTMLCanvasElement, reduced: boolean): Three {
     const loop = new THREE.Mesh(loopGeo, capMat);
     loop.scale.setScalar(capR);
     loop.position.y = -0.09 * capR;
-    const cap = new THREE.Mesh(capGeo, capMat);
+    const cap = new THREE.Mesh(def.p === 'heart' ? collarGeo : capGeo, capMat);
     cap.scale.setScalar(capR);
     ball.scale.setScalar(r);
     ball.position.y = -1.38 * r;
     spinner.add(loop, cap, ball);
     const shadow = new THREE.Mesh(planeGeo, shadowMat);
     if (def.p === 'bird') shadow.scale.set(r * 2.2, r * 3.6, 1);
+    else if (def.p === 'heart') shadow.scale.set(r * 2.0, r * 1.8, 1);
     else shadow.scale.setScalar(r * 2.7);
     shadow.position.set(r * 0.4, -STRING - 1.38 * r - r * 0.3, -r * 1.2);
     pivot.add(str, spinner, shadow);
