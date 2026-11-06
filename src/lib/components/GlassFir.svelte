@@ -27,7 +27,7 @@
       return 'Drag a bauble to move it; it stays on the branches. Save when it looks right.';
     }
     if (tree.layout) {
-      return 'Five painted glass baubles, a glass songbird, a frosted heart, an emerald swan, a golden songbird and a ruby songbird hang on the fir. Sweep across the branches to set them turning, or grab one and spin it.';
+      return 'Four painted glass baubles, a glass songbird, a frosted heart, a plum snowflake, an emerald swan, a golden songbird and a ruby songbird hang on the fir. Sweep across the branches to set them turning, or grab one and spin it.';
     }
     if (auth.status === 'unauthenticated') return 'Log in to hang your baubles on the fir.';
     return '';
@@ -37,7 +37,7 @@
     tree.isEditing
       ? 'Illustrated Christmas tree in edit mode. Drag a bauble to move it, or press [ and ] to pick one and the arrow keys to move it.'
       : tree.layout
-        ? 'Illustrated Christmas tree with five glass baubles, a glass songbird, a frosted heart, and a clip-on glass swan, golden songbird and ruby songbird with feather tails. Left and right arrow keys spin them, up and down swing them.'
+        ? 'Illustrated Christmas tree with four glass baubles, a glass songbird, a frosted heart, a plum glitter snowflake, and a clip-on glass swan, golden songbird and ruby songbird with feather tails. Left and right arrow keys spin them, up and down swing them.'
         : 'Illustrated Christmas tree, bare until you log in.'
   );
 </script>
