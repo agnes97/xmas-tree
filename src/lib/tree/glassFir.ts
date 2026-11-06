@@ -2,16 +2,18 @@ import * as THREE from 'three';
 import { mergeGeometries, mergeVertices } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { paintCopperBauble } from './copperBauble';
 import { HEART_CAP, frostedHeartMesh } from './frostedHeart';
+import { goldbirdFigure } from './goldbird';
 import { paintJJBauble } from './jjBauble';
 import { HEAD, songbirdMesh } from './songbird';
 import { paintStreaksBauble } from './streaksBauble';
+import { swanFigure } from './swan';
 import { paintSwirlsBauble } from './swirlsBauble';
 import type { GlitterMaps } from './sphereMaps';
 
 /**
- * The Glass Fir: a 2D-canvas fir with nine painted glass baubles, a glass
- * songbird and a frosted glass heart rendered in WebGL above it that spin and
- * swing on interaction.
+ * The Glass Fir: a 2D-canvas fir with seven painted glass baubles, a glass
+ * songbird, a frosted glass heart, and a clip-on glass swan and golden
+ * songbird rendered in WebGL above it that spin and swing on interaction.
  *
  * Coordinates for the tree and baubles are in units of the tree's own height.
  */
@@ -25,7 +27,20 @@ type Tier = {
   scallops: { x: number; dip: number; lift: number }[];
 };
 
-type Pattern = 'jj' | 'streaks' | 'swirls' | 'copper' | 'number' | 'bird' | 'heart';
+type Pattern =
+  | 'jj'
+  | 'streaks'
+  | 'swirls'
+  | 'copper'
+  | 'number'
+  | 'bird'
+  | 'heart'
+  | 'swan'
+  | 'goldbird';
+
+/** Ornaments that clip onto a branch: no string or cap, and a feather tail. */
+const CLIPPED = { swan: swanFigure, goldbird: goldbirdFigure };
+const isClipped = (p: Pattern): p is keyof typeof CLIPPED => p in CLIPPED;
 
 type BaubleDef = {
   id: string;
@@ -37,6 +52,8 @@ type BaubleDef = {
   n?: number;
   /** What to call it when it is picked, if not `<id> bauble`. */
   label?: string;
+  /** How far from its centre it can be grabbed, in units of `r` over a bauble's reach. */
+  reach?: number;
 };
 
 /** Where a bauble hangs from, in units of the tree's height: x from the trunk, y down from the top. */
@@ -63,7 +80,10 @@ type Bauble = {
   y: number;
   pivot: THREE.Group;
   spinner: THREE.Group;
-  ball: THREE.Mesh;
+  ball: THREE.Object3D;
+  /** A clipped-on ornament: the tilt it rests at, how far it turns either side of that, and how hard its tail is blown, 0 to 1. */
+  clip?: { rest: number; tilt: [number, number]; setGust: (gust: number) => void };
+  gust: number;
   spin: number;
   spinVel: number;
   base: number;
@@ -123,17 +143,34 @@ const numbered = (n: number, id: string, x: number, y: number, r: number): Baubl
 });
 
 // The numbered baubles keep their original ids so saved layouts still place them; the
-// songbird took the place of number 1 and the heart that of number 3, so they keep those
-// ids. Their `r` is one bird or heart unit.
+// songbird took the place of number 1, the swan that of number 2, the heart that of
+// number 3 and the golden songbird that of number 4, so they keep those ids. Their `r` is
+// one figure unit.
 export const BAUBLES: BaubleDef[] = [
   { id: 'lime-jj', x: 0.015, y: 0.13, r: 0.042, p: 'jj' },
   { id: 'burgundy-swirls', x: -0.12, y: 0.29, r: 0.037, p: 'swirls' },
   { id: 'grey-streaks', x: 0.145, y: 0.33, r: 0.04, p: 'streaks' },
   { id: 'gold', x: -0.01, y: 0.41, r: 0.045, p: 'bird', label: 'glass songbird' },
   { id: 'copper-winter', x: -0.23, y: 0.5, r: 0.042, p: 'copper' },
-  numbered(2, 'cream-stripes', 0.215, 0.52, 0.038),
+  {
+    id: 'cream-stripes',
+    x: 0.215,
+    y: 0.52,
+    r: 0.058,
+    p: 'swan',
+    label: 'emerald glass swan',
+    reach: 1.4,
+  },
   { id: 'teal-flakes', x: 0.03, y: 0.585, r: 0.062, p: 'heart', label: 'frosted glass heart' },
-  numbered(4, 'pink-bands', -0.31, 0.7, 0.046),
+  {
+    id: 'pink-bands',
+    x: -0.31,
+    y: 0.7,
+    r: 0.05,
+    p: 'goldbird',
+    label: 'golden glass songbird',
+    reach: 1.4,
+  },
   numbered(5, 'ochre-dots', -0.085, 0.72, 0.036),
   numbered(6, 'navy-meridians', 0.3, 0.68, 0.044),
   numbered(7, 'red-stars', 0.12, 0.79, 0.04),
@@ -445,7 +482,8 @@ function initThree(canvas: HTMLCanvasElement, reduced: boolean): Three {
   const aniso = renderer.capabilities.getMaxAnisotropy();
   const rnd = mulberry(3);
   const baubles = BAUBLES.map((def): Bauble => {
-    let ball: THREE.Mesh;
+    let ball: THREE.Object3D;
+    let clip: Bauble['clip'];
     const glitter = GLITTERED[def.p];
     if (def.p === 'bird') {
       const bird = songbirdMesh();
@@ -455,6 +493,11 @@ function initThree(canvas: HTMLCanvasElement, reduced: boolean): Three {
       const heart = frostedHeartMesh();
       ball = heart.mesh;
       disposables.push(heart);
+    } else if (isClipped(def.p)) {
+      const figure = CLIPPED[def.p](reduced);
+      ball = figure.object;
+      clip = figure;
+      disposables.push(figure);
     } else if (glitter) {
       // Glass with glitter: the maps carry the colour, the grain and which parts are metal.
       const maps = glitter.paint();
@@ -523,13 +566,19 @@ function initThree(canvas: HTMLCanvasElement, reduced: boolean): Three {
     cap.scale.setScalar(capR);
     ball.scale.setScalar(r);
     ball.position.y = -1.38 * r;
-    spinner.add(loop, cap, ball);
+    // The clipped ornaments sit on the branch: no string, loop or cap.
+    if (clip) spinner.add(ball);
+    else spinner.add(loop, cap, ball);
     const shadow = new THREE.Mesh(planeGeo, shadowMat);
     if (def.p === 'bird') shadow.scale.set(r * 2.2, r * 3.6, 1);
     else if (def.p === 'heart') shadow.scale.set(r * 2.0, r * 1.8, 1);
+    else if (def.p === 'swan') shadow.scale.set(r * 3.4, r * 2.2, 1);
+    else if (def.p === 'goldbird') shadow.scale.set(r * 3.6, r * 1.5, 1);
     else shadow.scale.setScalar(r * 2.7);
     shadow.position.set(r * 0.4, -STRING - 1.38 * r - r * 0.3, -r * 1.2);
-    pivot.add(str, spinner, shadow);
+    if (def.p === 'swan') shadow.position.x += r * 0.5;
+    if (def.p === 'goldbird') shadow.position.x += r * 0.3;
+    pivot.add(...(clip ? [] : [str]), spinner, shadow);
     root.add(pivot);
 
     return {
@@ -538,10 +587,13 @@ function initThree(canvas: HTMLCanvasElement, reduced: boolean): Three {
       y: def.y,
       pivot,
       spinner,
-      ball: ball,
-      spin: rnd() * Math.PI * 2,
+      ball,
+      clip,
+      gust: 0,
+      // A clipped ornament doesn't spin round: its spin is a tilt either side of its resting angle.
+      spin: clip ? 0 : rnd() * Math.PI * 2,
       spinVel: 0,
-      base: reduced ? 0 : (rnd() < 0.5 ? -1 : 1) * (0.18 + rnd() * 0.18),
+      base: reduced || clip ? 0 : (rnd() < 0.5 ? -1 : 1) * (0.18 + rnd() * 0.18),
       sz: 0,
       szv: 0,
       sx: 0,
@@ -765,7 +817,7 @@ export function mountGlassFir(stage: HTMLElement, options: GlassFirOptions = {})
     let bd = Infinity;
     for (const b of three.baubles) {
       const d = Math.hypot(b.sxp - x, b.syp - y);
-      if (d < b.rp * 1.25 && d < bd) {
+      if (d < b.rp * 1.25 * (b.def.reach ?? 1) && d < bd) {
         best = b;
         bd = d;
       }
@@ -904,7 +956,23 @@ export function mountGlassFir(stage: HTMLElement, options: GlassFirOptions = {})
     const t = now / 1000;
     if (three) {
       for (const b of three.baubles) {
-        if (b !== grabbed || editing) {
+        if (b.clip) {
+          // Clipped on: a nudge tilts it a little, springs back, and blows through the plume.
+          b.gust = Math.max(
+            b.gust * Math.exp(-dt * 1.1),
+            Math.min(1, Math.abs(b.spinVel) * 0.08 + Math.abs(b.szv) * 0.4)
+          );
+          b.clip.setGust(b.gust);
+          if (b !== grabbed || editing) {
+            b.spinVel += (-10 * b.spin - 3 * b.spinVel) * dt;
+            b.spin += b.spinVel * dt;
+          }
+          const tilt = Math.min(b.clip.tilt[1], Math.max(b.clip.tilt[0], b.spin));
+          if (tilt !== b.spin) {
+            b.spin = tilt;
+            b.spinVel = 0;
+          }
+        } else if (b !== grabbed || editing) {
           b.spinVel += (b.base - b.spinVel) * (1 - Math.exp(-0.55 * dt));
           b.spin += b.spinVel * dt;
         }
@@ -916,9 +984,11 @@ export function mountGlassFir(stage: HTMLElement, options: GlassFirOptions = {})
         b.sxv += (-k * b.sx - c * b.sxv) * dt;
         b.sz = clamp(b.sz + b.szv * dt, 0.7);
         b.sx = clamp(b.sx + b.sxv * dt, 0.6);
-        b.spinner.rotation.y = b.spin;
-        b.pivot.rotation.z = b.sz;
-        b.pivot.rotation.x = b.sx;
+        // A clipped ornament only wobbles a little on its branch.
+        const sway = b.clip ? 0.3 : 1;
+        b.spinner.rotation.y = b.clip ? b.clip.rest + b.spin : b.spin;
+        b.pivot.rotation.z = b.sz * sway;
+        b.pivot.rotation.x = b.sx * sway;
       }
       three.renderer.render(three.scene, three.camera);
       project();
