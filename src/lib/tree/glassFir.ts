@@ -12,7 +12,7 @@ import { paintSwirlsBauble } from './swirlsBauble';
 import type { GlitterMaps } from './sphereMaps';
 
 /**
- * The Glass Fir: a 2D-canvas fir with six painted glass baubles, a glass
+ * The Glass Fir: a 2D-canvas fir with five painted glass baubles, a glass
  * songbird, a frosted glass heart, and a clip-on glass swan, golden songbird
  * and ruby songbird rendered in WebGL above it that spin and swing on
  * interaction.
@@ -174,7 +174,6 @@ export const BAUBLES: BaubleDef[] = [
     label: 'golden glass songbird',
     reach: 1.4,
   },
-  numbered(5, 'ochre-dots', -0.085, 0.72, 0.036),
   numbered(6, 'navy-meridians', 0.3, 0.68, 0.044),
   {
     id: 'red-stars',
