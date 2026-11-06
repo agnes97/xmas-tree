@@ -4,6 +4,7 @@ import { paintCopperBauble } from './copperBauble';
 import { HEART_CAP, frostedHeartMesh } from './frostedHeart';
 import { goldbirdFigure } from './goldbird';
 import { paintJJBauble } from './jjBauble';
+import { redbirdFigure } from './redbird';
 import { HEAD, songbirdMesh } from './songbird';
 import { paintStreaksBauble } from './streaksBauble';
 import { swanFigure } from './swan';
@@ -11,9 +12,10 @@ import { paintSwirlsBauble } from './swirlsBauble';
 import type { GlitterMaps } from './sphereMaps';
 
 /**
- * The Glass Fir: a 2D-canvas fir with seven painted glass baubles, a glass
- * songbird, a frosted glass heart, and a clip-on glass swan and golden
- * songbird rendered in WebGL above it that spin and swing on interaction.
+ * The Glass Fir: a 2D-canvas fir with six painted glass baubles, a glass
+ * songbird, a frosted glass heart, and a clip-on glass swan, golden songbird
+ * and ruby songbird rendered in WebGL above it that spin and swing on
+ * interaction.
  *
  * Coordinates for the tree and baubles are in units of the tree's own height.
  */
@@ -36,10 +38,11 @@ type Pattern =
   | 'bird'
   | 'heart'
   | 'swan'
-  | 'goldbird';
+  | 'goldbird'
+  | 'redbird';
 
 /** Ornaments that clip onto a branch: no string or cap, and a feather tail. */
-const CLIPPED = { swan: swanFigure, goldbird: goldbirdFigure };
+const CLIPPED = { swan: swanFigure, goldbird: goldbirdFigure, redbird: redbirdFigure };
 const isClipped = (p: Pattern): p is keyof typeof CLIPPED => p in CLIPPED;
 
 type BaubleDef = {
@@ -144,8 +147,8 @@ const numbered = (n: number, id: string, x: number, y: number, r: number): Baubl
 
 // The numbered baubles keep their original ids so saved layouts still place them; the
 // songbird took the place of number 1, the swan that of number 2, the heart that of
-// number 3 and the golden songbird that of number 4, so they keep those ids. Their `r` is
-// one figure unit.
+// number 3, the golden songbird that of number 4 and the ruby songbird that of number 7,
+// so they keep those ids. Their `r` is one figure unit.
 export const BAUBLES: BaubleDef[] = [
   { id: 'lime-jj', x: 0.015, y: 0.13, r: 0.042, p: 'jj' },
   { id: 'burgundy-swirls', x: -0.12, y: 0.29, r: 0.037, p: 'swirls' },
@@ -173,7 +176,15 @@ export const BAUBLES: BaubleDef[] = [
   },
   numbered(5, 'ochre-dots', -0.085, 0.72, 0.036),
   numbered(6, 'navy-meridians', 0.3, 0.68, 0.044),
-  numbered(7, 'red-stars', 0.12, 0.79, 0.04),
+  {
+    id: 'red-stars',
+    x: 0.12,
+    y: 0.79,
+    r: 0.04,
+    p: 'redbird',
+    label: 'ruby glass songbird',
+    reach: 1.4,
+  },
 ];
 
 /** Baubles painted by hand with glitter, baked into full material maps. */
@@ -574,10 +585,12 @@ function initThree(canvas: HTMLCanvasElement, reduced: boolean): Three {
     else if (def.p === 'heart') shadow.scale.set(r * 2.0, r * 1.8, 1);
     else if (def.p === 'swan') shadow.scale.set(r * 3.4, r * 2.2, 1);
     else if (def.p === 'goldbird') shadow.scale.set(r * 3.6, r * 1.5, 1);
+    else if (def.p === 'redbird') shadow.scale.set(r * 4.2, r * 1.8, 1);
     else shadow.scale.setScalar(r * 2.7);
     shadow.position.set(r * 0.4, -STRING - 1.38 * r - r * 0.3, -r * 1.2);
     if (def.p === 'swan') shadow.position.x += r * 0.5;
     if (def.p === 'goldbird') shadow.position.x += r * 0.3;
+    if (def.p === 'redbird') shadow.position.x += r * 0.5;
     pivot.add(...(clip ? [] : [str]), spinner, shadow);
     root.add(pivot);
 

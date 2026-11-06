@@ -54,8 +54,11 @@ void main(){
   gl_Position = projectionMatrix * modelViewMatrix * vec4(p, 1.0);
 }`;
 
-/** `spec` is the colour and strength of the sheen running along each fibre. */
-const fibreFragment = (spec: V3) => /* glsl */ `
+/**
+ * `spec` is the colour and strength of the sheen running along each fibre;
+ * `darkSpec` scales it down on near-black fibres, which shine less.
+ */
+const fibreFragment = (spec: V3, darkSpec = 1) => /* glsl */ `
 varying vec4 vCol; varying vec3 vT; varying float vAo;
 void main(){
   vec3 T = normalize(vT + vec3(1e-5));
@@ -63,7 +66,7 @@ void main(){
   float tl = dot(T, L), tl2 = dot(T, L2), th = dot(T, normalize(L + V));
   float diff = sqrt(max(0.0, 1.0 - tl * tl)), diff2 = sqrt(max(0.0, 1.0 - tl2 * tl2));
   float sp = pow(sqrt(max(0.0, 1.0 - th * th)), 80.0);
-  vec3 col = vCol.rgb * (0.30 + 0.85 * diff + 0.25 * diff2) * vAo + vec3(${spec.map((v) => v.toFixed(4)).join(', ')}) * sp * vAo;
+  vec3 col = vCol.rgb * (0.30 + 0.85 * diff + 0.25 * diff2) * vAo + vec3(${spec.map((v) => v.toFixed(4)).join(', ')}) * sp * vAo * mix(${darkSpec.toFixed(4)}, 1.0, step(0.05, vCol.r));
   col = col / (1.0 + col * 0.12);
   col = pow(col, vec3(1.0 / 2.2));
   gl_FragColor = vec4(col * vCol.a, vCol.a);
@@ -110,7 +113,7 @@ export function fitFibres(
  */
 export function marabouLines(
   data: Float32Array,
-  opts: { reduced: boolean; spec: V3; tunedPx: number; barbs: number }
+  opts: { reduced: boolean; spec: V3; darkSpec?: number; tunedPx: number; barbs: number }
 ) {
   const buffer = new THREE.InterleavedBuffer(data, STRIDE);
   const geometry = new THREE.BufferGeometry();
@@ -120,7 +123,7 @@ export function marabouLines(
   geometry.setAttribute('aPar', new THREE.InterleavedBufferAttribute(buffer, 4, 10));
   const material = new THREE.ShaderMaterial({
     vertexShader: fibreVertex,
-    fragmentShader: fibreFragment(opts.spec),
+    fragmentShader: fibreFragment(opts.spec, opts.darkSpec),
     uniforms: {
       uTime: { value: 0 },
       uBreeze: { value: opts.reduced ? 0 : 1 },
