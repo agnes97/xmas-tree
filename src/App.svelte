@@ -1,5 +1,6 @@
 <script lang="ts">
   import { untrack } from 'svelte';
+  import Bookmarks from './lib/components/Bookmarks.svelte';
   import GlassFir from './lib/components/GlassFir.svelte';
   import Header from './lib/components/Header.svelte';
   import LoginForm from './lib/components/LoginForm.svelte';
@@ -34,6 +35,7 @@
 <Header onLoginClick={() => (isLoginOpen = true)} />
 
 <main>
+  <Bookmarks />
   <GlassFir />
 </main>
 
@@ -46,8 +48,15 @@
 <style>
   main {
     flex: 1;
-    display: flex;
-    flex-direction: column;
+    display: grid;
+    grid-template-columns: minmax(260px, 3fr) 7fr;
+    align-items: stretch;
+  }
+
+  @media (max-width: 760px) {
+    main {
+      grid-template-columns: minmax(0, 1fr);
+    }
   }
 
   footer {

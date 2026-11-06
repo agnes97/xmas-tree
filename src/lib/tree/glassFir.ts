@@ -73,6 +73,13 @@ export type GlassFir = {
   /** The baubles' positions, or null to show the tree bare. */
   setLayout: (layout: Layout | null) => void;
   setEditing: (editing: boolean) => void;
+  /**
+   * Pictures of every ornament on its own, resting and facing front, as transparent
+   * PNG data URLs keyed by id; empty without WebGL or before the stage has a size.
+   */
+  snapshots: () => Record<string, string>;
+  /** Sets one ornament swinging, to point it out. */
+  nudge: (id: string) => void;
   destroy: () => void;
 };
 
@@ -1012,6 +1019,81 @@ export function mountGlassFir(stage: HTMLElement, options: GlassFirOptions = {})
       grabbed = null;
       last = null;
       stage.style.cursor = 'default';
+    },
+    snapshots() {
+      if (!three || !W || !H) return {};
+      const { renderer, scene, camera, root, baubles } = three;
+      // Square pictures as big as the stage allows, in CSS pixels.
+      const size = Math.floor(Math.min(360, W, H));
+      const px = Math.round(size * dpr);
+      const shot = new THREE.PerspectiveCamera(22, 1, 1, 10000);
+      const dist = size / 2 / Math.tan(THREE.MathUtils.degToRad(11));
+      const out = document.createElement('canvas');
+      out.width = out.height = px;
+      const ctx = out.getContext('2d')!;
+      const box = new THREE.Box3();
+      const centre = new THREE.Vector3();
+      const extent = new THREE.Vector3();
+      const wasShown = root.visible;
+      root.visible = true;
+      const pictures: Record<string, string> = {};
+
+      for (const b of baubles) {
+        // Only this ornament, without its string or shadow, resting and facing front.
+        const hidden = baubles.map((o) => [o.pivot, o.pivot.visible] as const);
+        for (const o of baubles) o.pivot.visible = o === b;
+        const parts = b.pivot.children.map((c) => [c, c.visible] as const);
+        for (const c of b.pivot.children) c.visible = c === b.spinner;
+        const pose = [
+          b.spinner.rotation.y,
+          b.pivot.rotation.x,
+          b.pivot.rotation.z,
+          b.pivot.scale.x,
+        ];
+        const limited = b.clip ?? b.turn;
+        b.spinner.rotation.y = limited ? limited.rest : 0;
+        b.pivot.rotation.set(0, 0, 0);
+
+        // Scaled up rather than zoomed in on, so the raymarched figures keep their one-pixel edges.
+        root.updateMatrixWorld(true);
+        box.setFromObject(b.spinner).getSize(extent);
+        b.pivot.scale.multiplyScalar((0.86 * size) / Math.max(extent.x, extent.y, 1e-6));
+        root.updateMatrixWorld(true);
+        box.setFromObject(b.spinner).getCenter(centre);
+        shot.position.set(centre.x, centre.y, centre.z + dist);
+        shot.near = dist * 0.2;
+        shot.far = dist * 3;
+        shot.lookAt(centre);
+        shot.updateProjectionMatrix();
+
+        renderer.setScissorTest(true);
+        renderer.setScissor(0, 0, size, size);
+        renderer.setViewport(0, 0, size, size);
+        renderer.clear();
+        renderer.render(scene, shot);
+        ctx.clearRect(0, 0, px, px);
+        // The viewport sits at the canvas's bottom left.
+        ctx.drawImage(glCanvas, 0, glCanvas.height - px, px, px, 0, 0, px, px);
+        pictures[b.def.id] = out.toDataURL('image/png');
+
+        b.spinner.rotation.y = pose[0];
+        b.pivot.rotation.set(pose[1], 0, pose[2]);
+        b.pivot.scale.setScalar(pose[3]);
+        for (const [c, v] of parts) c.visible = v;
+        for (const [o, v] of hidden) o.visible = v;
+      }
+
+      root.visible = wasShown;
+      renderer.setScissorTest(false);
+      renderer.setViewport(0, 0, W, H);
+      renderer.render(scene, camera);
+      return pictures;
+    },
+    nudge(id) {
+      const b = three?.baubles.find((o) => o.def.id === id);
+      if (!b) return;
+      b.szv += 0.6;
+      b.spinVel += (b.clip ?? b.turn) ? 1.5 : 3;
     },
     destroy() {
       cancelAnimationFrame(raf);

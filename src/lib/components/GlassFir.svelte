@@ -22,15 +22,20 @@
   $effect(() => fir?.setLayout(tree.layout));
   $effect(() => fir?.setEditing(tree.isEditing));
 
-  const intro = $derived.by(() => {
-    if (tree.isEditing) {
-      return 'Drag a bauble to move it; it stays on the branches. Save when it looks right.';
-    }
-    if (tree.layout) {
-      return 'Four painted glass baubles, a glass songbird, a frosted heart, a plum snowflake, an emerald swan, a golden songbird and a ruby songbird hang on the fir. Sweep across the branches to set them turning, or grab one and spin it.';
-    }
-    if (auth.status === 'unauthenticated') return 'Log in to hang your baubles on the fir.';
-    return '';
+  // Once the baubles hang, take their pictures for the bookmarks; the models never change, so once is enough.
+  $effect(() => {
+    const handle = fir;
+    if (!handle || !tree.layout || Object.keys(tree.images).length) return;
+    const raf = requestAnimationFrame(() => {
+      const pictures = handle.snapshots();
+      if (Object.keys(pictures).length) tree.images = pictures;
+    });
+    return () => cancelAnimationFrame(raf);
+  });
+
+  // A hovered bookmark sets its ornament swinging.
+  $effect(() => {
+    if (tree.hovered) fir?.nudge(tree.hovered);
   });
 
   const label = $derived(
@@ -43,10 +48,6 @@
 </script>
 
 <section class="fir">
-  <div class="bar">
-    <p>{intro}</p>
-  </div>
-
   <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
   <div
     {@attach attach}
@@ -74,24 +75,6 @@
       --snow: #16282b;
     }
   }
-
-  .bar {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: baseline;
-    justify-content: space-between;
-    gap: 6px 40px;
-    padding: 22px max(24px, env(safe-area-inset-right, 0px)) 4px
-      max(24px, env(safe-area-inset-left, 0px));
-  }
-
-  .bar p {
-    min-height: 1lh;
-    margin: 0;
-    max-width: 46ch;
-    font-size: 15px;
-  }
-
   .stage {
     position: relative;
     flex: 1;
@@ -126,16 +109,5 @@
     overflow: hidden;
     clip-path: inset(50%);
     white-space: nowrap;
-  }
-
-  @media (max-width: 560px) {
-    .bar {
-      padding: 16px max(16px, env(safe-area-inset-right, 0px)) 0
-        max(16px, env(safe-area-inset-left, 0px));
-    }
-
-    .bar p {
-      font-size: 14px;
-    }
   }
 </style>
