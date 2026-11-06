@@ -42,7 +42,7 @@
     tree.isEditing
       ? 'Illustrated Christmas tree in edit mode. Drag a bauble to move it, or press [ and ] to pick one and the arrow keys to move it.'
       : tree.layout
-        ? 'Illustrated Christmas tree with four glass baubles, a glass songbird, a frosted heart, a plum glitter snowflake, and a clip-on glass swan, golden songbird and ruby songbird with feather tails. Left and right arrow keys spin them, up and down swing them.'
+        ? 'Illustrated Christmas tree with a snowflake topper, four glass baubles, a glass songbird, a frosted heart, a plum glitter snowflake, and a clip-on glass swan, golden songbird and ruby songbird with feather tails. Left and right arrow keys spin them, up and down swing them.'
         : 'Illustrated Christmas tree, bare until you log in.'
   );
 </script>

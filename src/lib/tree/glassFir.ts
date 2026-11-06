@@ -9,16 +9,20 @@ import { SNOWFLAKE_CORD, SNOWFLAKE_REST, SNOWFLAKE_TILT, snowflakeFigure } from 
 import { HEAD, songbirdMesh } from './songbird';
 import { paintStreaksBauble } from './streaksBauble';
 import { swanFigure } from './swan';
+import { TOPPER_BASE, topperFigure } from './topper';
 import { paintSwirlsBauble } from './swirlsBauble';
 import type { GlitterMaps } from './sphereMaps';
 
 /**
- * The Glass Fir: a 2D-canvas fir with four painted glass baubles, a glass
- * songbird, a frosted glass heart, a plum glitter snowflake, and a clip-on
- * glass swan, golden songbird and ruby songbird rendered in WebGL above it
- * that spin and swing on interaction.
+ * The Glass Fir: a 2D-canvas fir with a snowflake topper, four painted glass
+ * baubles, a glass songbird, a frosted glass heart, a plum glitter snowflake,
+ * and a clip-on glass swan, golden songbird and ruby songbird rendered in WebGL
+ * above it that spin and swing on interaction.
  *
  * Coordinates for the tree and baubles are in units of the tree's own height.
+ * The tree is drawn narrower than those units by `SLIM`, so a tall, slim
+ * topper suits it; positions are squeezed the same way, so saved layouts keep
+ * every bauble on its branch.
  */
 
 type Tier = {
@@ -40,7 +44,8 @@ type Pattern =
   | 'snowflake'
   | 'swan'
   | 'goldbird'
-  | 'redbird';
+  | 'redbird'
+  | 'topper';
 
 /** Ornaments that clip onto a branch: no string or cap, and a feather tail. */
 const CLIPPED = { swan: swanFigure, goldbird: goldbirdFigure, redbird: redbirdFigure };
@@ -56,6 +61,8 @@ type BaubleDef = {
   label?: string;
   /** How far from its centre it can be grabbed, in units of `r` over a bauble's reach. */
   reach?: number;
+  /** It stays where it is put: it can't be moved in edit mode, and saved layouts don't move it. */
+  fixed?: true;
 };
 
 /** Where a bauble hangs from, in units of the tree's height: x from the trunk, y down from the top. */
@@ -124,9 +131,23 @@ const mulberry = (seed: number) => () => {
   return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
 };
 
+/** How much narrower the tree is drawn than its height units, and its baubles' positions with it. */
+const SLIM = 0.8;
+/** Where the tip of the top tier is, below the top of the tree's space in its height units. */
+const TIP = 0.08;
+/** The topper's size: its ball's radius, in tree units. */
+const TOPPER_R = 0.032;
+/**
+ * Where the bottom of the topper's tube sits: where the top tier grows as wide as the tube, so the
+ * tip ends inside it and the branches flare out just below its rim.
+ */
+const TOPPER_SEAT = TIP + 0.011;
+/** How far above the tip the tree's space reaches, for the topper's spire, in tree units. */
+const HEADROOM = 0.18;
+
 const TIERS: Tier[] = [
-  { y0: 0.0, y1: 0.25, wt: 0, wb: 0.16, fill: '#386d50' },
-  { y0: 0.15, y1: 0.43, wt: 0.07, wb: 0.245, fill: '#33674b' },
+  { y0: TIP, y1: 0.25, wt: 0, wb: 0.16, fill: '#386d50' },
+  { y0: 0.15, y1: 0.41, wt: 0.07, wb: 0.245, fill: '#33674b' },
   { y0: 0.32, y1: 0.62, wt: 0.11, wb: 0.32, fill: '#2f6147' },
   { y0: 0.5, y1: 0.8, wt: 0.15, wb: 0.395, fill: '#2c5c43' },
   { y0: 0.68, y1: 0.93, wt: 0.19, wb: 0.46, fill: '#29573f' },
@@ -146,8 +167,18 @@ const TIERS: Tier[] = [
 // The figures took the places of the old numbered baubles and keep their ids, so saved
 // layouts still place them: the songbird took number 1, the swan number 2, the heart
 // number 3, the golden songbird number 4, the snowflake number 6 and the ruby songbird
-// number 7. Their `r` is one figure unit.
+// number 7. Their `r` is one figure unit. The topper sits on the tip, its `y` the ball's centre.
 export const BAUBLES: BaubleDef[] = [
+  {
+    id: 'snowflake-topper',
+    x: 0,
+    y: Math.round((TOPPER_SEAT - TOPPER_BASE * TOPPER_R) * 10000) / 10000,
+    r: TOPPER_R,
+    p: 'topper',
+    label: 'snowflake tree topper',
+    reach: 2.5,
+    fixed: true,
+  },
   { id: 'lime-jj', x: 0.015, y: 0.13, r: 0.042, p: 'jj' },
   { id: 'burgundy-swirls', x: -0.12, y: 0.29, r: 0.037, p: 'swirls' },
   { id: 'grey-streaks', x: 0.145, y: 0.33, r: 0.04, p: 'streaks' },
@@ -464,6 +495,10 @@ function initThree(canvas: HTMLCanvasElement, reduced: boolean): Three {
       const heart = frostedHeartMesh();
       ball = heart.mesh;
       disposables.push(heart);
+    } else if (def.p === 'topper') {
+      const topper = topperFigure();
+      ball = topper.object;
+      disposables.push(topper);
     } else if (def.p === 'snowflake') {
       const flake = snowflakeFigure();
       ball = flake.object;
@@ -523,9 +558,15 @@ function initThree(canvas: HTMLCanvasElement, reduced: boolean): Three {
     cap.scale.setScalar(capR);
     ball.scale.setScalar(r);
     ball.position.y = -1.38 * r;
+    // The topper sits on the tip: no string, cap or shadow, and its position is its ball's centre.
+    const topper = def.p === 'topper';
+    if (topper) {
+      spinner.position.y = 0;
+      ball.position.y = 0;
+    }
     // The clipped ornaments sit on the branch: no string, loop or cap; the snowflake's cord runs
     // straight through its arm.
-    if (clip || flake) spinner.add(ball);
+    if (clip || flake || topper) spinner.add(ball);
     else spinner.add(loop, cap, ball);
     const shadow = new THREE.Mesh(planeGeo, shadowMat);
     if (def.p === 'bird') shadow.scale.set(r * 2.2, r * 3.6, 1);
@@ -539,7 +580,7 @@ function initThree(canvas: HTMLCanvasElement, reduced: boolean): Three {
     if (def.p === 'swan') shadow.position.x += r * 0.5;
     if (def.p === 'goldbird') shadow.position.x += r * 0.3;
     if (def.p === 'redbird') shadow.position.x += r * 0.5;
-    pivot.add(...(clip ? [] : [str]), spinner, shadow);
+    pivot.add(...(topper ? [spinner] : clip ? [spinner, shadow] : [str, spinner, shadow]));
     root.add(pivot);
     const turn = flake ? { rest: SNOWFLAKE_REST, tilt: SNOWFLAKE_TILT } : undefined;
     const limited = clip ?? turn;
@@ -558,7 +599,7 @@ function initThree(canvas: HTMLCanvasElement, reduced: boolean): Three {
       // resting angle.
       spin: limited ? 0 : rnd() * Math.PI * 2,
       spinVel: 0,
-      base: reduced || limited ? 0 : (rnd() < 0.5 ? -1 : 1) * (0.18 + rnd() * 0.18),
+      base: reduced || limited ? 0 : topper ? 0.3 : (rnd() < 0.5 ? -1 : 1) * (0.18 + rnd() * 0.18),
       sz: 0,
       szv: 0,
       sx: 0,
@@ -604,7 +645,7 @@ export function mountGlassFir(stage: HTMLElement, options: GlassFirOptions = {})
   let top = 0;
   let paths: Path2D[] = [];
 
-  const X = (u: number) => cx + u * TH;
+  const X = (u: number) => cx + u * TH * SLIM;
   const Y = (v: number) => top + v * TH;
 
   function drawTree() {
@@ -615,7 +656,7 @@ export function mountGlassFir(stage: HTMLElement, options: GlassFirOptions = {})
 
     ctx.fillStyle = css('--snow');
     ctx.beginPath();
-    ctx.ellipse(X(0), Y(1.0), S * 0.44, S * 0.038, 0, 0, Math.PI * 2);
+    ctx.ellipse(X(0), Y(1.0), S * 0.44 * SLIM, S * 0.038, 0, 0, Math.PI * 2);
     ctx.fill();
 
     ctx.fillStyle = '#6a4630';
@@ -663,15 +704,18 @@ export function mountGlassFir(stage: HTMLElement, options: GlassFirOptions = {})
       ctx.restore();
     }
 
-    const sx = X(0);
-    const sy = Y(-0.03);
-    const R = S * 0.052;
-    star(ctx, sx + S * 0.004, sy + S * 0.007, R, 0.12);
-    ctx.fillStyle = '#b97d17';
-    ctx.fill();
-    star(ctx, sx, sy, R, 0.12);
-    ctx.fillStyle = '#f2b534';
-    ctx.fill();
+    // Without WebGL there is no topper, so a painted star tops the tree instead.
+    if (!three) {
+      const sx = X(0);
+      const sy = Y(-0.03);
+      const R = S * 0.052;
+      star(ctx, sx + S * 0.004, sy + S * 0.007, R, 0.12);
+      ctx.fillStyle = '#b97d17';
+      ctx.fill();
+      star(ctx, sx, sy, R, 0.12);
+      ctx.fillStyle = '#f2b534';
+      ctx.fill();
+    }
   }
 
   let three: Three | null = null;
@@ -683,7 +727,7 @@ export function mountGlassFir(stage: HTMLElement, options: GlassFirOptions = {})
   }
 
   function place(b: Bauble) {
-    b.pivot.position.set(b.x * TH, -b.y * TH, 0);
+    b.pivot.position.set(b.x * TH * SLIM, -b.y * TH, 0);
   }
 
   function layout() {
@@ -692,9 +736,11 @@ export function mountGlassFir(stage: HTMLElement, options: GlassFirOptions = {})
     H = rect.height;
     if (!W || !H) return;
     dpr = Math.min(window.devicePixelRatio || 1, 2);
-    TH = Math.min((H * 0.94) / 1.08, (W - 32) / 0.98);
+    // The tree with its snow below and the topper's spire above it.
+    const tall = 1.01 + HEADROOM;
+    TH = Math.min((H * 0.94) / tall, (W - 32) / (0.98 * SLIM));
     cx = W / 2;
-    top = (H - 1.08 * TH) / 2 + 0.07 * TH;
+    top = (H - tall * TH) / 2 + HEADROOM * TH;
     canvases.tree.width = Math.round(W * dpr);
     canvases.tree.height = Math.round(H * dpr);
     paths = TIERS.map((t) => tierPath(t, X, Y));
@@ -737,6 +783,7 @@ export function mountGlassFir(stage: HTMLElement, options: GlassFirOptions = {})
    * along the way without leaving the tree. Returns whether it moved.
    */
   function moveCentre(b: Bauble, u: number, v: number) {
+    if (b.def.fixed) return false;
     const d = drop(b.def.r);
     const fromU = b.x;
     const fromV = b.y + d;
@@ -804,6 +851,8 @@ export function mountGlassFir(stage: HTMLElement, options: GlassFirOptions = {})
     const p = local(e);
     last = p;
     grabbed = hit(p.x, p.y);
+    // A fixed ornament can be spun, but not picked up to move it.
+    if (grabbed?.def.fixed && editing) grabbed = null;
     if (grabbed) {
       if (editing) {
         hold = { x: p.x - X(grabbed.x), y: p.y - Y(grabbed.y + drop(grabbed.def.r)) };
@@ -818,8 +867,12 @@ export function mountGlassFir(stage: HTMLElement, options: GlassFirOptions = {})
     if (!three) return;
     if (editing) {
       last = p;
-      if (grabbed) moveCentre(grabbed, (p.x - hold.x - cx) / TH, (p.y - hold.y - top) / TH);
-      else if (e.pointerType === 'mouse') stage.style.cursor = hit(p.x, p.y) ? 'grab' : 'default';
+      if (grabbed) {
+        moveCentre(grabbed, (p.x - hold.x - cx) / (TH * SLIM), (p.y - hold.y - top) / TH);
+      } else if (e.pointerType === 'mouse') {
+        const over = hit(p.x, p.y);
+        stage.style.cursor = over && !over.def.fixed ? 'grab' : 'default';
+      }
       return;
     }
     if (!last || (e.pointerType !== 'mouse' && e.buttons === 0)) {
@@ -869,8 +922,8 @@ export function mountGlassFir(stage: HTMLElement, options: GlassFirOptions = {})
     ArrowUp: [0, -1],
     ArrowDown: [0, 1],
   };
-  // The bauble picked with [ and ] in edit mode.
-  let picked = 0;
+  // The bauble picked with [ and ] in edit mode; fixed ones are skipped.
+  let picked = BAUBLES.findIndex((d) => !d.fixed);
   const labelOf = (b: Bauble) => b.def.label ?? `${b.def.id.replace('-', ' ')} bauble`;
 
   const onKeyDown = (e: KeyboardEvent) => {
@@ -879,7 +932,9 @@ export function mountGlassFir(stage: HTMLElement, options: GlassFirOptions = {})
       const { baubles } = three;
       if (e.key === '[' || e.key === ']') {
         e.preventDefault();
-        picked = (picked + (e.key === ']' ? 1 : -1) + baubles.length) % baubles.length;
+        const dir = e.key === ']' ? 1 : -1;
+        do picked = (picked + dir + baubles.length) % baubles.length;
+        while (baubles[picked].def.fixed);
         const b = baubles[picked];
         b.szv += 0.6;
         options.onPick?.(labelOf(b));
@@ -951,8 +1006,8 @@ export function mountGlassFir(stage: HTMLElement, options: GlassFirOptions = {})
         b.sxv += (-k * b.sx - c * b.sxv) * dt;
         b.sz = clamp(b.sz + b.szv * dt, 0.7);
         b.sx = clamp(b.sx + b.sxv * dt, 0.6);
-        // A clipped ornament only wobbles a little on its branch.
-        const sway = b.clip ? 0.3 : 1;
+        // A clipped ornament only wobbles a little on its branch, and the topper not at all.
+        const sway = b.def.fixed ? 0 : b.clip ? 0.3 : 1;
         b.spinner.rotation.y = limited ? limited.rest + b.spin : b.spin;
         b.pivot.rotation.z = b.sz * sway;
         b.pivot.rotation.x = b.sx * sway;
@@ -1004,7 +1059,7 @@ export function mountGlassFir(stage: HTMLElement, options: GlassFirOptions = {})
         return;
       }
       for (const b of three.baubles) {
-        const p = next[b.def.id] ?? DEFAULT_LAYOUT[b.def.id];
+        const p = (!b.def.fixed && next[b.def.id]) || DEFAULT_LAYOUT[b.def.id];
         // Moves made here come back rounded; only a real change (load, discard) moves a bauble.
         if (Math.abs(b.x - p.x) < 2e-4 && Math.abs(b.y - p.y) < 2e-4) continue;
         b.x = p.x;

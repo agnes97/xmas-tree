@@ -3,6 +3,8 @@
   import { MAX_DESCRIPTION, ORNAMENTS } from '../ornaments';
   import type { Story, StoryPatch } from '../tree.svelte';
   import EditableYear from './EditableYear.svelte';
+  import FestivePanel from './festive/FestivePanel.svelte';
+  import GoldButton from './festive/GoldButton.svelte';
 
   type Props = {
     /** The decoration whose story is open, or null when closed. */
@@ -19,19 +21,6 @@
 
   let editing = $state(false);
   let draft = $state('');
-
-  // Snowflakes with fixed, varied paths, so they don't all fall in step.
-  const flakes = Array.from({ length: 24 }, (_, i) => {
-    const r = (n: number) => ((Math.sin(i * 12.9898 + n * 78.233) * 43758.5453) % 1 + 1) % 1;
-    return {
-      left: `${(r(1) * 100).toFixed(1)}%`,
-      size: `${(3 + r(2) * 5).toFixed(1)}px`,
-      duration: `${(7 + r(3) * 8).toFixed(1)}s`,
-      delay: `${(-r(4) * 15).toFixed(1)}s`,
-      drift: `${((r(5) - 0.5) * 60).toFixed(0)}px`,
-      opacity: (0.45 + r(6) * 0.5).toFixed(2),
-    };
-  });
 
   const sync: Attachment<HTMLDialogElement> = (dialog) => {
     if (openId && !dialog.open) dialog.showModal();
@@ -100,132 +89,74 @@
   {onkeydown}
 >
   {#if story}
-    <div class="snow" aria-hidden="true">
-      {#each flakes as flake, i (i)}
-        <span
-          style:left={flake.left}
-          style:width={flake.size}
-          style:height={flake.size}
-          style:opacity={flake.opacity}
-          style:animation-duration={flake.duration}
-          style:animation-delay={flake.delay}
-          style:--drift={flake.drift}
-        ></span>
-      {/each}
-    </div>
+    <FestivePanel garland holly>
 
-    <svg class="garland" viewBox="0 0 720 84" preserveAspectRatio="xMidYMin slice" aria-hidden="true">
-      <g fill="none" stroke-linecap="round">
-        <path d="M-10 6 Q180 66 360 16 Q540 66 730 6" stroke="#0b3322" stroke-width="24" />
-        <path d="M-10 6 Q180 66 360 16 Q540 66 730 6" stroke="#1b5e3d" stroke-width="20" stroke-dasharray="2 3" />
-        <path d="M-10 6 Q180 66 360 16 Q540 66 730 6" stroke="#2c7d51" stroke-width="13" stroke-dasharray="1.5 4.5" />
-        <path d="M-10 6 Q180 66 360 16 Q540 66 730 6" stroke="#5ba377" stroke-width="7" stroke-dasharray="1 7" />
-      </g>
-      <g class="dangles">
-        {#each [
-          { x: 108, y: 31, c: '#c0283c', len: 14 },
-          { x: 216, y: 36, c: '#e2b33e', len: 20 },
-          { x: 504, y: 36, c: '#e2b33e', len: 20 },
-          { x: 612, y: 31, c: '#c0283c', len: 14 },
-        ] as d (d.x)}
-          <line x1={d.x} y1={d.y} x2={d.x} y2={d.y + d.len} stroke="#e8c76a" stroke-width="1" />
-          <rect x={d.x - 3} y={d.y + d.len - 2} width="6" height="4" rx="1" fill="#d8d0b8" />
-          <circle cx={d.x} cy={d.y + d.len + 9} r="9" fill={d.c} />
-          <circle cx={d.x - 3} cy={d.y + d.len + 6} r="2.6" fill="white" opacity="0.55" />
-        {/each}
-      </g>
-      <g class="bow">
-        <path d="M360 18 C340 -2 316 4 322 20 C328 34 348 26 360 18Z" fill="#c8202f" />
-        <path d="M360 18 C380 -2 404 4 398 20 C392 34 372 26 360 18Z" fill="#c8202f" />
-        <path d="M356 20 L340 52 L348 50 L352 58 L360 24Z" fill="#a51826" />
-        <path d="M364 20 L380 52 L372 50 L368 58 L360 24Z" fill="#a51826" />
-        <circle cx="360" cy="19" r="6.5" fill="#e0303f" />
-      </g>
-    </svg>
+      <GoldButton shape="round" class="close" aria-label="Close" onclick={() => (openId = null)}>×</GoldButton>
 
-    <svg class="holly left" viewBox="0 0 90 60" aria-hidden="true">
-      <path d="M8 52 C14 38 30 30 46 32 L42 37 L50 40 L43 43 L46 50 L37 47 L32 53 L28 46 L20 52 L19 45Z" fill="#1f6b45" />
-      <path d="M46 32 C58 18 74 14 86 18 L80 22 L86 28 L78 29 L78 37 L71 33 L64 39 L62 31 L54 35 L55 29Z" fill="#2c7d51" />
-      <circle cx="46" cy="34" r="5" fill="#d0243a" />
-      <circle cx="53" cy="38" r="4.5" fill="#b81c31" />
-      <circle cx="42" cy="40" r="4" fill="#e03246" />
-    </svg>
-    <svg class="holly right" viewBox="0 0 90 60" aria-hidden="true">
-      <path d="M8 52 C14 38 30 30 46 32 L42 37 L50 40 L43 43 L46 50 L37 47 L32 53 L28 46 L20 52 L19 45Z" fill="#1f6b45" />
-      <path d="M46 32 C58 18 74 14 86 18 L80 22 L86 28 L78 29 L78 37 L71 33 L64 39 L62 31 L54 35 L55 29Z" fill="#2c7d51" />
-      <circle cx="46" cy="34" r="5" fill="#d0243a" />
-      <circle cx="53" cy="38" r="4.5" fill="#b81c31" />
-      <circle cx="42" cy="40" r="4" fill="#e03246" />
-    </svg>
-
-    <button type="button" class="close" aria-label="Close" onclick={() => (openId = null)}>×</button>
-
-    <div class="body">
-      <figure style:--ink={story.color}>
-        <div class={['hanger', story.clipped && 'clipped']}>
-          {#if !story.clipped}
-            <span class="string"></span>
-          {/if}
-          {#if story.image}
-            {#key story.id}
-              <img src={story.image} alt={`The ${story.name}`} />
-            {/key}
-          {:else}
-            <span class="glass" role="img" aria-label={`The ${story.name}`}></span>
-          {/if}
-        </div>
-      </figure>
-
-      <div class="words">
-        <EditableYear
-          value={story.year}
-          name={story.name}
-          size="hero"
-          onCommit={(year) => onChange(story.id, { year })}
-        />
-        <h2 id="story-name">{story.name}</h2>
-
-        <div class="tag">
-          <svg class="twine" viewBox="0 0 60 70" aria-hidden="true">
-            <path d="M44 34 C30 30 22 12 6 4 M44 34 C30 40 26 56 10 66" fill="none" stroke="#c8202f" stroke-width="2" stroke-linecap="round" />
-          </svg>
-          <div class="card">
-            {#if editing}
-              <textarea
-                {@attach select}
-                bind:value={draft}
-                maxlength={MAX_DESCRIPTION}
-                rows="6"
-                aria-label={`Story of the ${story.name}`}
-                onkeydown={onAreaKeydown}
-                onblur={() => finishEditing(true)}
-              ></textarea>
-              <span class="count">{draft.length} / {MAX_DESCRIPTION} · ⌘↵ to save · Esc to cancel</span>
-            {:else}
-              <button type="button" class="description" title="Edit the story" onclick={startEditing}>
-                {story.description}
-                <span class="pencil" aria-hidden="true">✎</span>
-                <span class="visually-hidden">Edit the story</span>
-              </button>
+      <div class="body">
+        <figure style:--ink={story.color}>
+          <div class={['hanger', story.clipped && 'clipped']}>
+            {#if !story.clipped}
+              <span class="string"></span>
             {/if}
+            {#if story.image}
+              {#key story.id}
+                <img src={story.image} alt={`The ${story.name}`} />
+              {/key}
+            {:else}
+              <span class="glass" role="img" aria-label={`The ${story.name}`}></span>
+            {/if}
+          </div>
+        </figure>
+
+        <div class="words">
+          <EditableYear
+            value={story.year}
+            name={story.name}
+            size="hero"
+            onCommit={(year) => onChange(story.id, { year })}
+          />
+          <h2 id="story-name">{story.name}</h2>
+
+          <div class="tag">
+            <svg class="twine" viewBox="0 0 60 70" aria-hidden="true">
+              <path d="M44 34 C30 30 22 12 6 4 M44 34 C30 40 26 56 10 66" fill="none" stroke="#c8202f" stroke-width="2" stroke-linecap="round" />
+            </svg>
+            <div class="card">
+              {#if editing}
+                <textarea
+                  {@attach select}
+                  bind:value={draft}
+                  maxlength={MAX_DESCRIPTION}
+                  rows="6"
+                  aria-label={`Story of the ${story.name}`}
+                  onkeydown={onAreaKeydown}
+                  onblur={() => finishEditing(true)}
+                ></textarea>
+                <span class="count">{draft.length} / {MAX_DESCRIPTION} · ⌘↵ to save · Esc to cancel</span>
+              {:else}
+                <button type="button" class="description" title="Edit the story" onclick={startEditing}>
+                  {story.description}
+                  <span class="pencil" aria-hidden="true">✎</span>
+                  <span class="visually-hidden">Edit the story</span>
+                </button>
+              {/if}
+            </div>
           </div>
         </div>
       </div>
-    </div>
 
-    <footer>
-      <button type="button" class="step" aria-label="Previous decoration" onclick={() => step(-1)}>‹</button>
-      <span>{index + 1} of {stories.length}</span>
-      <button type="button" class="step" aria-label="Next decoration" onclick={() => step(1)}>›</button>
-    </footer>
+      <footer>
+        <GoldButton shape="round" aria-label="Previous decoration" onclick={() => step(-1)}>‹</GoldButton>
+        <span>{index + 1} of {stories.length}</span>
+        <GoldButton shape="round" aria-label="Next decoration" onclick={() => step(1)}>›</GoldButton>
+      </footer>
+    </FestivePanel>
   {/if}
 </dialog>
 
 <style>
   .story {
-    --gold: #e6b94a;
-    --cream: #f6ecd4;
-
     position: fixed;
     width: min(760px, calc(100vw - 2rem));
     max-height: calc(100dvh - 2rem);
@@ -233,14 +164,8 @@
     overflow: hidden auto;
     border: none;
     border-radius: 22px;
-    background:
-      radial-gradient(120% 90% at 30% 20%, #1d4a35, #123425 55%, #0b2419);
-    color: var(--cream);
-    font-family: var(--body);
-    box-shadow:
-      inset 0 0 0 2px #0b2419,
-      inset 0 0 0 4px var(--gold),
-      0 30px 80px -20px rgb(0 0 0 / 0.7);
+    background: var(--pine);
+    box-shadow: 0 30px 80px -20px rgb(0 0 0 / 0.7);
   }
 
   .story[open] {
@@ -266,91 +191,14 @@
     }
   }
 
-  .snow {
-    position: absolute;
-    inset: 0;
-    overflow: hidden;
-    pointer-events: none;
-  }
-
-  .snow span {
-    position: absolute;
-    top: -10px;
-    border-radius: 50%;
-    background: white;
-    filter: blur(0.6px);
-    animation: fall linear infinite;
-  }
-
-  @keyframes fall {
-    to {
-      transform: translate(var(--drift), 640px);
-    }
-  }
-
-  .garland {
-    position: absolute;
-    top: 0;
-    left: 0;
-    width: 100%;
-    height: 84px;
-    pointer-events: none;
-    transform-origin: 50% 0;
-    animation: swag 1.6s ease-out;
-  }
-
-  @keyframes swag {
-    30% {
-      transform: rotate(0.8deg);
-    }
-    60% {
-      transform: rotate(-0.5deg);
-    }
-  }
-
-  .holly {
-    position: absolute;
-    bottom: 6px;
-    width: 90px;
-    pointer-events: none;
-  }
-
-  .holly.left {
-    left: 6px;
-  }
-
-  .holly.right {
-    right: 6px;
-    transform: scaleX(-1);
-  }
-
-  .close {
+  .story :global(.close) {
     position: absolute;
     top: 14px;
     right: 16px;
     z-index: 2;
-    display: grid;
-    place-items: center;
-    width: 38px;
-    height: 38px;
-    padding: 0 0 3px;
-    border: 1.5px solid var(--gold);
-    border-radius: 50%;
-    background: #0f2c20;
-    color: var(--gold);
-    font-size: 24px;
-    line-height: 1;
-    cursor: pointer;
+    background: var(--pine);
   }
 
-  .close:hover,
-  .step:hover {
-    background: var(--gold);
-    color: #0f2c20;
-  }
-
-  .close:focus-visible,
-  .step:focus-visible,
   .description:focus-visible {
     outline: 3px solid var(--cream);
     outline-offset: 2px;
@@ -565,21 +413,6 @@
     font-variant-numeric: tabular-nums;
   }
 
-  .step {
-    display: grid;
-    place-items: center;
-    width: 40px;
-    height: 40px;
-    padding: 0 0 3px;
-    border: 1.5px solid var(--gold);
-    border-radius: 50%;
-    background: transparent;
-    color: var(--gold);
-    font-size: 26px;
-    line-height: 1;
-    cursor: pointer;
-  }
-
   .visually-hidden {
     position: absolute;
     width: 1px;
@@ -592,14 +425,9 @@
   @media (prefers-reduced-motion: reduce) {
     .story[open],
     .story::backdrop,
-    .garland,
     .hanger,
     .hanger img {
       animation: none;
-    }
-
-    .snow {
-      display: none;
     }
   }
 
@@ -617,10 +445,6 @@
     .words {
       align-items: center;
       text-align: center;
-    }
-
-    .holly {
-      width: 64px;
     }
   }
 </style>

@@ -11,6 +11,15 @@
   --display: 'Caprasimo', 'Cooper Black', Georgia, serif;
   --body: 'Albert Sans', 'Helvetica Neue', Arial, sans-serif;
 
+  /* The festive panels (header, popups) look the same in light and dark. */
+  --gold: #e6b94a;
+  --gold-bright: #f0c75e;
+  --cream: #f6ecd4;
+  --pine: #123425;
+  --pine-deep: #0b2419;
+  --pine-light: #1d4a35;
+  --festive-danger: #ff9a9a;
+
   color-scheme: light dark;
   font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
   line-height: 1.5;

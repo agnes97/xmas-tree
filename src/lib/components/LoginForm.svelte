@@ -1,5 +1,6 @@
 <script lang="ts">
   import { auth } from '../auth.svelte';
+  import GoldButton from './festive/GoldButton.svelte';
 
   type Props = {
     onSuccess: () => void;
@@ -59,9 +60,9 @@
     <p class="error" role="alert">{auth.error}</p>
   {/if}
 
-  <button type="submit" disabled={!isValid || isSubmitting}>
+  <GoldButton type="submit" primary class="submit" disabled={!isValid || isSubmitting}>
     {isSubmitting ? 'Logging in…' : 'Login'}
-  </button>
+  </GoldButton>
 </form>
 
 <style>
@@ -74,31 +75,36 @@
   label {
     display: flex;
     flex-direction: column;
-    gap: 0.25rem;
+    gap: 0.3rem;
   }
 
   span {
-    font-size: 0.875rem;
-    color: var(--text-muted);
+    font-size: 13px;
+    font-weight: 500;
+    font-variant: small-caps;
+    letter-spacing: 0.12em;
+    color: var(--gold);
   }
 
   input {
-    padding: 0.5rem 0.75rem;
-    border: 1px solid var(--border);
-    border-radius: 8px;
-    background: var(--bg);
-    color: var(--text);
+    padding: 0.6rem 0.85rem;
+    border: 1.5px solid transparent;
+    border-radius: 10px;
+    background: var(--cream);
+    color: #3b2a1a;
     font: inherit;
+    font-size: 16px;
   }
 
   input:focus-visible {
-    outline: 2px solid var(--accent);
+    border-color: var(--gold);
+    outline: 3px solid color-mix(in srgb, var(--gold) 45%, transparent);
     outline-offset: 1px;
   }
 
   small,
   .error {
-    color: var(--danger);
+    color: var(--festive-danger);
     font-size: 0.8125rem;
   }
 
@@ -106,19 +112,8 @@
     margin: 0;
   }
 
-  button {
-    padding: 0.625rem;
-    border: none;
-    border-radius: 8px;
-    background: var(--accent);
-    color: var(--on-accent);
-    font: inherit;
-    font-weight: 600;
-    cursor: pointer;
-  }
-
-  button:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
+  form :global(.submit) {
+    margin-top: 0.5rem;
+    padding: 0.75rem;
   }
 </style>

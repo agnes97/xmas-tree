@@ -118,7 +118,7 @@
   .hero {
     width: 3.2em;
     font-size: 48px;
-    color: #f0c75e;
+    color: var(--gold-bright);
   }
 
   button.year {

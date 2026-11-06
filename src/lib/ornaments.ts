@@ -16,6 +16,12 @@ export type Ornament = {
 
 /** Every decoration on the fir, keyed by its id in `BAUBLES`. */
 export const ORNAMENTS: Record<string, Ornament> = {
+  'snowflake-topper': {
+    name: 'Snowflake tree topper',
+    color: '#9fb0a4',
+    description:
+      'A slender spire of satin pearl-white glass over a frosted sage ball painted with silver glitter snowflakes, tied round the neck with a black grosgrain bow printed with Jack Daniel’s.',
+  },
   'lime-jj': {
     name: 'J+J bauble',
     color: '#9cc44a',

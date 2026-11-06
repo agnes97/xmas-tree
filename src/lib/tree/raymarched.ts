@@ -30,13 +30,14 @@ const vec3 BMIN = ${v(min)}, BMAX = ${v(max)};`;
 /**
  * The mesh: a box from `min` to `max` in figure units, its origin at figure
  * point (0, cy, 0). It is scaled by the ornament's `r`, so one figure unit is
- * `r` tree units.
+ * `r` tree units. `uniforms` adds the figure's own to `uTime` and `uPx`.
  */
 export function raymarchedMesh(
   fragmentShader: string,
   cy: number,
   min: THREE.Vector3,
-  max: THREE.Vector3
+  max: THREE.Vector3,
+  uniforms: Record<string, THREE.IUniform> = {}
 ) {
   const size = new THREE.Vector3().subVectors(max, min);
   const mid = new THREE.Vector3().addVectors(min, max).multiplyScalar(0.5);
@@ -48,7 +49,7 @@ export function raymarchedMesh(
   const material = new THREE.ShaderMaterial({
     vertexShader,
     fragmentShader,
-    uniforms: { uTime: { value: 0 }, uPx: { value: 0.01 } },
+    uniforms: { ...uniforms, uTime: { value: 0 }, uPx: { value: 0.01 } },
     alphaToCoverage: true,
   });
   const mesh = new THREE.Mesh(geometry, material);

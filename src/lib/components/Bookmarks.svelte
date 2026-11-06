@@ -43,11 +43,6 @@
 </script>
 
 <aside class="rail" aria-labelledby="rail-title">
-  <header>
-    <h2 id="rail-title">Decorations</h2>
-    <p>newest on the tree first</p>
-  </header>
-
   {#if tree.storyError}
     <p class="error" role="alert">{tree.storyError}. The change was undone.</p>
   {/if}
