@@ -22,6 +22,13 @@
   onbeforeunload={(event) => {
     if (tree.isDirty) event.preventDefault();
   }}
+  ononline={() => auth.recheck()}
+/>
+
+<svelte:document
+  onvisibilitychange={() => {
+    if (document.visibilityState === 'visible') auth.recheck();
+  }}
 />
 
 <Header onLoginClick={() => (isLoginOpen = true)} />
