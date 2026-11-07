@@ -13,7 +13,9 @@
       onPick: (label) => (announcement = label),
     });
     fir = handle;
+    tree.view = handle.view;
     return () => {
+      tree.view = null;
       handle.destroy();
       fir = undefined;
     };
@@ -57,37 +59,64 @@
     aria-label={label}
   ></div>
 
+  {#if tree.isEditing}
+    <p class="hint" aria-hidden="true">Drag a bauble to move it</p>
+  {/if}
   <p class="visually-hidden" aria-live="polite">{tree.isEditing ? announcement : ''}</p>
 </section>
 
 <style>
   .fir {
-    --snow: #e8efe9;
+    /* The snow the tree stands in, read by the canvas. */
+    --snow: #24392e;
 
-    flex: 1;
+    position: relative;
     display: flex;
     flex-direction: column;
+    min-width: 0;
+    min-height: 0;
+    /* Grows up behind the header, as far as App measured room for. */
+    margin-top: calc(-1 * var(--lift, 0px));
     font-family: var(--body);
   }
 
-  @media (prefers-color-scheme: dark) {
-    .fir {
-      --snow: #16282b;
-    }
+  /* A soft glow behind the tree. */
+  .fir::before {
+    content: '';
+    position: absolute;
+    inset: calc(var(--lift, 0px) + 6%) 10% 6%;
+    background: radial-gradient(closest-side, var(--halo), transparent);
+    pointer-events: none;
   }
+
   .stage {
     position: relative;
     flex: 1;
-    min-height: 420px;
+    min-height: 0;
     touch-action: none;
     outline: none;
     cursor: default;
   }
 
-  .stage.editing {
-    outline: 2px dashed color-mix(in srgb, var(--title) 55%, transparent);
-    outline-offset: -12px;
+  /* The edit frame stays below the header. */
+  .stage.editing::after {
+    content: '';
+    position: absolute;
+    inset: calc(var(--lift, 0px) + 10px) 10px 10px;
+    border: 2px dashed color-mix(in srgb, var(--title) 55%, transparent);
     border-radius: 24px;
+    pointer-events: none;
+  }
+
+  /* Inside the edit frame's corner, where it never crowds the header or the tree. */
+  .hint {
+    position: absolute;
+    top: calc(var(--lift, 0px) + 22px);
+    left: 26px;
+    margin: 0;
+    font-size: 14px;
+    color: var(--text-muted);
+    pointer-events: none;
   }
 
   .stage:focus-visible {

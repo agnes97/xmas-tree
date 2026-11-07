@@ -1,6 +1,6 @@
 import { auth } from './auth.svelte';
 import { DEFAULT_YEAR, ORNAMENTS } from './ornaments';
-import { BAUBLES, DEFAULT_LAYOUT, type Position } from './tree/glassFir';
+import { BAUBLES, DEFAULT_LAYOUT, type Position, type View } from './tree/glassFir';
 
 export type TreeStatus = 'idle' | 'loading' | 'ready' | 'saving' | 'error';
 
@@ -47,6 +47,8 @@ class Tree {
 
   /** Pictures of the decorations taken from the tree, by id. */
   images = $state.raw<Record<string, string>>({});
+  /** Shows a decoration live from the tree, to spin by hand; null without the tree's WebGL. */
+  view = $state.raw<View | null>(null);
   /** The decoration whose bookmark is hovered, so the tree can point it out. */
   hovered = $state<string | null>(null);
   storyError = $state<string | null>(null);

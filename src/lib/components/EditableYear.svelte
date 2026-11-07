@@ -6,13 +6,13 @@
     value: number;
     /** The decoration's name, for screen readers. */
     name: string;
-    /** `tab` on a bookmark, `hero` in the story popup. */
-    size?: 'tab' | 'hero';
+    /** `card` on a decoration's card, `hero` in the story popup. */
+    size?: 'card' | 'hero';
     /** Absent when the year can't be changed. */
     onCommit?: (year: number) => void;
   };
 
-  let { value, name, size = 'tab', onCommit }: Props = $props();
+  let { value, name, size = 'card', onCommit }: Props = $props();
 
   const max = new Date().getFullYear();
   let editing = $state(false);
@@ -109,10 +109,9 @@
     background: transparent;
   }
 
-  .tab {
-    width: 3.1em;
-    font-size: 21px;
-    background: color-mix(in srgb, var(--surface) 70%, transparent);
+  .card {
+    width: 3.3em;
+    font-size: var(--year-size, 15px);
   }
 
   .hero {
@@ -142,10 +141,7 @@
     -moz-appearance: textfield;
   }
 
-  input.tab {
-    background: var(--surface);
-  }
-
+  input.card,
   input.hero {
     background: rgb(0 0 0 / 0.25);
   }

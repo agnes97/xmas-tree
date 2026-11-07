@@ -87,8 +87,17 @@ export type GlassFir = {
   snapshots: () => Record<string, string>;
   /** Sets one ornament swinging, to point it out. */
   nudge: (id: string) => void;
+  /** Shows an ornament live in a canvas, without WebGL null; see {@link View}. */
+  view: View | null;
   destroy: () => void;
 };
+
+/**
+ * Draws one ornament on its own into `canvas` every frame, as it turns on the
+ * tree, and lets it be spun by dragging across the canvas. Returns a function
+ * that stops it.
+ */
+export type View = (id: string, canvas: HTMLCanvasElement) => () => void;
 
 type Bauble = {
   def: BaubleDef;
@@ -965,6 +974,187 @@ export function mountGlassFir(stage: HTMLElement, options: GlassFirOptions = {})
   stage.addEventListener('pointerleave', onPointerLeave);
   stage.addEventListener('keydown', onKeyDown);
 
+  // ---------- One ornament on its own ----------
+  const shot = new THREE.PerspectiveCamera(22, 1, 1, 10000);
+  const box = new THREE.Box3();
+  const extent = new THREE.Vector3();
+  const origin = new THREE.Vector3();
+  type Fit = { factor: number; centre: THREE.Vector3 };
+
+  /**
+   * How much to scale a bauble up to fill a `size` px square, and where its
+   * centre then is, over every way it turns to: each of `turns`, or its resting angle.
+   */
+  function fit(b: Bauble, size: number, turns?: number[]): Fit {
+    const { root } = three!;
+    const limited = b.clip ?? b.turn;
+    const rest = limited ? limited.rest : 0;
+    const pose = [b.spinner.rotation.y, b.pivot.rotation.x, b.pivot.rotation.z] as const;
+    b.pivot.rotation.set(0, 0, 0);
+    box.makeEmpty();
+    for (const turn of turns ?? [0]) {
+      b.spinner.rotation.y = rest + turn;
+      root.updateMatrixWorld(true);
+      box.expandByObject(b.spinner);
+    }
+    b.pivot.getWorldPosition(origin);
+    b.spinner.rotation.y = pose[0];
+    b.pivot.rotation.set(pose[1], 0, pose[2]);
+    root.updateMatrixWorld(true);
+    box.getSize(extent);
+    const factor = (0.86 * size) / Math.max(extent.x, extent.y, 1e-6);
+    // Scaled up from where it hangs, its centre moves away from that by as much.
+    return {
+      factor,
+      centre: box.getCenter(new THREE.Vector3()).sub(origin).multiplyScalar(factor).add(origin),
+    };
+  }
+
+  /**
+   * Renders a bauble alone, without its string or shadow and hanging straight,
+   * into a `size` px square drawn onto `ctx`; turned to `spin`, or as it is now.
+   */
+  function shoot(
+    b: Bauble,
+    size: number,
+    { factor, centre }: Fit,
+    ctx: CanvasRenderingContext2D,
+    spin?: number
+  ) {
+    const { renderer, scene, root, baubles } = three!;
+    const px = Math.round(size * dpr);
+    const hidden = baubles.map((o) => [o.pivot, o.pivot.visible] as const);
+    for (const o of baubles) o.pivot.visible = o === b;
+    const parts = b.pivot.children.map((c) => [c, c.visible] as const);
+    for (const c of b.pivot.children) c.visible = c === b.spinner;
+    const pose = [
+      b.spinner.rotation.y,
+      b.pivot.rotation.x,
+      b.pivot.rotation.z,
+      b.pivot.scale.x,
+    ] as const;
+    const wasShown = root.visible;
+    root.visible = true;
+    if (spin !== undefined) b.spinner.rotation.y = spin;
+    b.pivot.rotation.set(0, 0, 0);
+    // Scaled up rather than zoomed in on, so the raymarched figures keep their one-pixel edges.
+    b.pivot.scale.multiplyScalar(factor);
+    root.updateMatrixWorld(true);
+
+    const dist = size / 2 / Math.tan(THREE.MathUtils.degToRad(11));
+    shot.position.set(centre.x, centre.y, centre.z + dist);
+    shot.near = dist * 0.2;
+    shot.far = dist * 3;
+    shot.lookAt(centre);
+    shot.updateProjectionMatrix();
+
+    renderer.setScissorTest(true);
+    renderer.setScissor(0, 0, size, size);
+    renderer.setViewport(0, 0, size, size);
+    renderer.clear();
+    renderer.render(scene, shot);
+    ctx.clearRect(0, 0, px, px);
+    // The viewport sits at the canvas's bottom left.
+    ctx.drawImage(glCanvas, 0, glCanvas.height - px, px, px, 0, 0, px, px);
+    renderer.setScissorTest(false);
+    renderer.setViewport(0, 0, W, H);
+
+    b.spinner.rotation.y = pose[0];
+    b.pivot.rotation.set(pose[1], 0, pose[2]);
+    b.pivot.scale.setScalar(pose[3]);
+    root.visible = wasShown;
+    for (const [c, v] of parts) c.visible = v;
+    for (const [o, v] of hidden) o.visible = v;
+  }
+
+  // The ornament shown live in a canvas of its own, and whether it is held there.
+  type Viewing = {
+    b: Bauble;
+    canvas: HTMLCanvasElement;
+    ctx: CanvasRenderingContext2D;
+    size: number;
+    fit: Fit | null;
+    key: string;
+  };
+  let viewing: Viewing | null = null;
+  let held: Bauble | null = null;
+  const holding = (b: Bauble) => b === held || (b === grabbed && !editing);
+
+  function drawView() {
+    const v = viewing;
+    if (!v || !W || !H) return;
+    // Never bigger than the stage's canvas it is rendered in first.
+    const size = Math.floor(Math.min(v.size, W, H));
+    if (size < 1) return;
+    const key = `${size} ${TH} ${dpr}`;
+    if (key !== v.key) {
+      const px = Math.round(size * dpr);
+      v.canvas.width = v.canvas.height = px;
+      // Framed to fit every way it turns, so it doesn't grow and shrink as it spins.
+      const limited = v.b.clip ?? v.b.turn;
+      const [from, to] = limited ? limited.tilt : [0, Math.PI * 2];
+      v.fit = fit(
+        v.b,
+        size,
+        Array.from({ length: 13 }, (_, i) => from + ((to - from) * i) / 12)
+      );
+      v.key = key;
+    }
+    shoot(v.b, size, v.fit!, v.ctx);
+  }
+
+  const view: View = (id, canvas) => {
+    const b = three?.baubles.find((o) => o.def.id === id);
+    const ctx = canvas.getContext('2d');
+    if (!b || !ctx) return () => {};
+    const v: Viewing = { b, canvas, ctx, size: 0, fit: null, key: '' };
+    viewing = v;
+    const observer = new ResizeObserver(([entry]) => {
+      const { width, height } = entry.contentRect;
+      v.size = Math.min(width, height);
+    });
+    observer.observe(canvas);
+
+    let at: Point | null = null;
+    const down = (e: PointerEvent) => {
+      if (e.button !== 0) return;
+      at = { x: e.clientX, y: e.clientY, t: e.timeStamp };
+      held = b;
+      canvas.setPointerCapture(e.pointerId);
+      canvas.style.cursor = 'grabbing';
+    };
+    const move = (e: PointerEvent) => {
+      if (!at || held !== b) return;
+      const dx = clamp(e.clientX - at.x, 80);
+      const dt = Math.max(0.008, (e.timeStamp - at.t) / 1000);
+      at = { x: e.clientX, y: e.clientY, t: e.timeStamp };
+      // Turned as far as the pointer moves across it, as on the tree.
+      const turn = dx / (b.def.r * TH * (v.fit?.factor ?? 1));
+      b.spin += turn;
+      b.spinVel = b.spinVel * 0.5 + clamp(turn / dt, 18) * 0.5;
+      b.szv += dx * 0.004;
+    };
+    const up = () => {
+      at = null;
+      if (held === b) held = null;
+      canvas.style.cursor = '';
+    };
+    canvas.addEventListener('pointerdown', down);
+    canvas.addEventListener('pointermove', move);
+    canvas.addEventListener('pointerup', up);
+    canvas.addEventListener('pointercancel', up);
+
+    return () => {
+      observer.disconnect();
+      canvas.removeEventListener('pointerdown', down);
+      canvas.removeEventListener('pointermove', move);
+      canvas.removeEventListener('pointerup', up);
+      canvas.removeEventListener('pointercancel', up);
+      if (held === b) held = null;
+      if (viewing === v) viewing = null;
+    };
+  };
+
   // ---------- Loop ----------
   let prevT = performance.now();
   let raf = 0;
@@ -985,7 +1175,7 @@ export function mountGlassFir(stage: HTMLElement, options: GlassFirOptions = {})
             );
             b.clip.setGust(b.gust);
           }
-          if (b !== grabbed || editing) {
+          if (!holding(b)) {
             b.spinVel += (-10 * b.spin - 3 * b.spinVel) * dt;
             b.spin += b.spinVel * dt;
           }
@@ -994,7 +1184,7 @@ export function mountGlassFir(stage: HTMLElement, options: GlassFirOptions = {})
             b.spin = tilt;
             b.spinVel = 0;
           }
-        } else if (b !== grabbed || editing) {
+        } else if (!holding(b)) {
           b.spinVel += (b.base - b.spinVel) * (1 - Math.exp(-0.55 * dt));
           b.spin += b.spinVel * dt;
         }
@@ -1012,6 +1202,7 @@ export function mountGlassFir(stage: HTMLElement, options: GlassFirOptions = {})
         b.pivot.rotation.z = b.sz * sway;
         b.pivot.rotation.x = b.sx * sway;
       }
+      drawView();
       three.renderer.render(three.scene, three.camera);
       project();
     }
@@ -1075,72 +1266,23 @@ export function mountGlassFir(stage: HTMLElement, options: GlassFirOptions = {})
       last = null;
       stage.style.cursor = 'default';
     },
+    view: three ? view : null,
     snapshots() {
       if (!three || !W || !H) return {};
-      const { renderer, scene, camera, root, baubles } = three;
+      const { renderer, scene, camera, baubles } = three;
       // Square pictures as big as the stage allows, in CSS pixels.
       const size = Math.floor(Math.min(360, W, H));
       const px = Math.round(size * dpr);
-      const shot = new THREE.PerspectiveCamera(22, 1, 1, 10000);
-      const dist = size / 2 / Math.tan(THREE.MathUtils.degToRad(11));
       const out = document.createElement('canvas');
       out.width = out.height = px;
       const ctx = out.getContext('2d')!;
-      const box = new THREE.Box3();
-      const centre = new THREE.Vector3();
-      const extent = new THREE.Vector3();
-      const wasShown = root.visible;
-      root.visible = true;
       const pictures: Record<string, string> = {};
-
       for (const b of baubles) {
-        // Only this ornament, without its string or shadow, resting and facing front.
-        const hidden = baubles.map((o) => [o.pivot, o.pivot.visible] as const);
-        for (const o of baubles) o.pivot.visible = o === b;
-        const parts = b.pivot.children.map((c) => [c, c.visible] as const);
-        for (const c of b.pivot.children) c.visible = c === b.spinner;
-        const pose = [
-          b.spinner.rotation.y,
-          b.pivot.rotation.x,
-          b.pivot.rotation.z,
-          b.pivot.scale.x,
-        ];
+        // Resting and facing front.
         const limited = b.clip ?? b.turn;
-        b.spinner.rotation.y = limited ? limited.rest : 0;
-        b.pivot.rotation.set(0, 0, 0);
-
-        // Scaled up rather than zoomed in on, so the raymarched figures keep their one-pixel edges.
-        root.updateMatrixWorld(true);
-        box.setFromObject(b.spinner).getSize(extent);
-        b.pivot.scale.multiplyScalar((0.86 * size) / Math.max(extent.x, extent.y, 1e-6));
-        root.updateMatrixWorld(true);
-        box.setFromObject(b.spinner).getCenter(centre);
-        shot.position.set(centre.x, centre.y, centre.z + dist);
-        shot.near = dist * 0.2;
-        shot.far = dist * 3;
-        shot.lookAt(centre);
-        shot.updateProjectionMatrix();
-
-        renderer.setScissorTest(true);
-        renderer.setScissor(0, 0, size, size);
-        renderer.setViewport(0, 0, size, size);
-        renderer.clear();
-        renderer.render(scene, shot);
-        ctx.clearRect(0, 0, px, px);
-        // The viewport sits at the canvas's bottom left.
-        ctx.drawImage(glCanvas, 0, glCanvas.height - px, px, px, 0, 0, px, px);
+        shoot(b, size, fit(b, size), ctx, limited ? limited.rest : 0);
         pictures[b.def.id] = out.toDataURL('image/png');
-
-        b.spinner.rotation.y = pose[0];
-        b.pivot.rotation.set(pose[1], 0, pose[2]);
-        b.pivot.scale.setScalar(pose[3]);
-        for (const [c, v] of parts) c.visible = v;
-        for (const [o, v] of hidden) o.visible = v;
       }
-
-      root.visible = wasShown;
-      renderer.setScissorTest(false);
-      renderer.setViewport(0, 0, W, H);
       renderer.render(scene, camera);
       return pictures;
     },
@@ -1152,6 +1294,8 @@ export function mountGlassFir(stage: HTMLElement, options: GlassFirOptions = {})
     },
     destroy() {
       cancelAnimationFrame(raf);
+      viewing = null;
+      held = null;
       timers.forEach(clearTimeout);
       resizeObserver.disconnect();
       darkQuery.removeEventListener('change', redraw);

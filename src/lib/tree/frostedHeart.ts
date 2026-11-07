@@ -66,8 +66,8 @@ float sdf(vec3 p){
   float s = max(q.y - 0.08, 0.0);
   q.y += 0.7 * s * s;              // broad, nearly flat shoulders with only a shallow dip
   float d = smin(heartHalf(q), heartHalf(vec3(-q.x, q.yz)), 0.12) / (ZS * 1.4);
-  // the neck, flaring in, ending inside the cap's collar
-  return smin(d, sdCap(p, vec3(0.0, 0.2, 0.0), vec3(0.0, 0.56, 0.0), 0.065), 0.12);
+  // the neck, flaring in, ending under the cap's dome (top at 0.545, the dome at 0.55-0.56)
+  return smin(d, sdCap(p, vec3(0.0, 0.2, 0.0), vec3(0.0, 0.48, 0.0), 0.065), 0.12);
 }
 vec3 calcN(vec3 p){
   const vec2 e = vec2(0.0012, -0.0012);

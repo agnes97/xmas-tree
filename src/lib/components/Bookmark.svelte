@@ -11,7 +11,7 @@
   let { story, onOpen, onYear }: Props = $props();
 </script>
 
-<div class="tab" style:--ink={story.color}>
+<div class="card" style:--c={story.color}>
   <button
     type="button"
     class="open"
@@ -19,61 +19,63 @@
     onclick={onOpen}
   ></button>
 
-  <div class="year-slot">
-    <EditableYear value={story.year} name={story.name} onCommit={onYear} />
-  </div>
-
-  <p class="text">
-    <span class="name">{story.name}</span>
-    <span class="description">{story.description}</span>
-  </p>
-
-  <span class="picture" aria-hidden="true">
+  <span class="orb" aria-hidden="true">
     {#if story.image}
       <img src={story.image} alt="" />
     {:else}
       <span class="glass"></span>
     {/if}
   </span>
+
+  <span class="name" aria-hidden="true">{story.name}</span>
+
+  <span class="year-slot">
+    <EditableYear value={story.year} name={story.name} size="card" onCommit={onYear} />
+  </span>
+
+  <span class="desc" aria-hidden="true">{story.description}</span>
 </div>
 
 <style>
-  .tab {
-    --tint: color-mix(in srgb, var(--ink) 16%, var(--surface));
-
+  /* A card in the popups' look; it shows more of the decoration the more room it gets. */
+  .card {
     position: relative;
-    display: flex;
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    grid-template-rows: minmax(0, 1fr);
     align-items: center;
-    gap: 12px;
-    width: 88%;
-    min-height: 84px;
-    padding: 8px 6px 8px 18px;
-    border: 1px solid color-mix(in srgb, var(--ink) 28%, var(--border));
-    border-left: none;
-    border-radius: 0 999px 999px 0;
+    gap: 0 10px;
+    width: 100%;
+    height: 100%;
+    padding: 0 8px 0 20px;
+    overflow: hidden;
+    border-radius: 14px;
     background:
-      linear-gradient(90deg, var(--ink) 0 6px, transparent 6px),
-      linear-gradient(
-        180deg,
-        color-mix(in srgb, var(--ink) 10%, var(--surface)),
-        var(--tint)
-      );
-    color: var(--text);
+      radial-gradient(110% 130% at 92% 0%, color-mix(in srgb, var(--c) 34%, transparent), transparent 62%),
+      radial-gradient(120% 90% at 30% 20%, var(--pine-light), var(--pine) 55%, var(--pine-deep));
+    color: var(--cream);
     box-shadow:
-      0 1px 2px rgb(0 0 0 / 0.06),
-      0 4px 12px -6px color-mix(in srgb, var(--ink) 50%, transparent);
+      inset 0 0 0 1.5px var(--pine-deep),
+      inset 0 0 0 3px color-mix(in srgb, var(--gold) 55%, transparent);
     transition:
-      width 0.35s cubic-bezier(0.3, 1.3, 0.5, 1),
-      box-shadow 0.3s,
-      transform 0.3s;
+      box-shadow 0.25s,
+      translate 0.3s var(--ease-out);
   }
 
-  .tab:hover,
-  .tab:focus-within {
-    width: 100%;
+  .card:hover,
+  .card:has(.open:focus-visible) {
+    translate: 0 -2px;
     box-shadow:
-      0 2px 4px rgb(0 0 0 / 0.08),
-      0 10px 24px -8px color-mix(in srgb, var(--ink) 65%, transparent);
+      inset 0 0 0 1.5px var(--pine-deep),
+      inset 0 0 0 3px var(--gold),
+      0 14px 26px -16px rgb(0 0 0 / 0.8);
+  }
+
+  .card:has(.open:focus-visible) {
+    box-shadow:
+      inset 0 0 0 1.5px var(--pine-deep),
+      inset 0 0 0 3px var(--gold),
+      0 0 0 3px var(--cream);
   }
 
   .open {
@@ -86,106 +88,148 @@
     border-radius: inherit;
     background: none;
     cursor: pointer;
+    outline: none;
   }
 
-  .open:focus-visible {
-    outline: 3px solid var(--ink);
-    outline-offset: 2px;
+  .orb {
+    display: grid;
+    place-items: center;
+    width: 24px;
+    height: 24px;
+    transition: transform 0.4s cubic-bezier(0.3, 1.4, 0.5, 1);
+  }
+
+  .card:hover .orb {
+    transform: scale(1.1) rotate(-6deg);
+  }
+
+  .orb img {
+    width: 140%;
+    height: 140%;
+    object-fit: contain;
+    filter: drop-shadow(0 6px 8px rgb(0 0 0 / 0.5));
+  }
+
+  .glass {
+    width: 100%;
+    height: 100%;
+    border-radius: 50%;
+    background: radial-gradient(
+      circle at 34% 30%,
+      color-mix(in srgb, #fff 70%, var(--c)),
+      var(--c) 55%,
+      color-mix(in srgb, #000 35%, var(--c))
+    );
+    box-shadow: 0 6px 14px -6px rgb(0 0 0 / 0.7);
+  }
+
+  .name {
+    min-width: 0;
+    overflow: hidden;
+    font-size: 14px;
+    font-weight: 500;
+    line-height: 1.25;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 
   .year-slot {
     position: relative;
     z-index: 2;
-    flex: none;
-    color: color-mix(in srgb, var(--ink) 70%, var(--text));
+    color: var(--gold-bright);
   }
 
-  .text {
-    flex: 1;
-    min-width: 0;
-    margin: 0;
-    font-family: var(--body);
+  .desc {
+    display: none;
   }
 
-  .name {
-    display: block;
-    overflow: hidden;
-    font-size: 12px;
-    font-weight: 700;
-    letter-spacing: 0.06em;
-    text-transform: uppercase;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    color: color-mix(in srgb, var(--ink) 60%, var(--text));
+  /* Medium card: a bigger glass, the year above the name, so the name has the width for two lines. */
+  @container card (min-height: 58px) {
+    .card {
+      grid-template-columns: auto minmax(0, 1fr);
+      grid-template-rows: auto auto;
+      align-content: center;
+      row-gap: 1px;
+    }
+
+    .orb {
+      grid-row: 1 / span 2;
+      width: 34px;
+      height: 34px;
+    }
+
+    .year-slot {
+      grid-row: 1;
+      grid-column: 2;
+      justify-self: start;
+      /* the year's pill padding, so its digits line up with the name */
+      margin-left: calc(-0.42em - 1.5px);
+    }
+
+    .name {
+      grid-row: 2;
+      grid-column: 2;
+      display: -webkit-box;
+      white-space: normal;
+      -webkit-box-orient: vertical;
+      -webkit-line-clamp: 2;
+      line-clamp: 2;
+    }
   }
 
-  .description {
-    display: -webkit-box;
-    overflow: hidden;
-    font-size: 14px;
-    line-height: 1.35;
-    color: var(--text-muted);
-    -webkit-box-orient: vertical;
-    -webkit-line-clamp: 1;
-    line-clamp: 1;
+  /* Tall card: the glass and year on top, the name below, the story's opening when there is room. */
+  @container card (min-height: 100px) and (min-width: 130px) {
+    .card {
+      grid-template-columns: auto minmax(0, 1fr);
+      grid-template-rows: auto minmax(0, 1fr) auto;
+      align-items: start;
+      padding: 12px 10px 13px 20px;
+    }
+
+    .orb {
+      grid-row: 1;
+      width: 40px;
+      height: 40px;
+    }
+
+    .year-slot {
+      grid-row: 1;
+      grid-column: 2;
+      justify-self: end;
+      margin-left: 0;
+      --year-size: 19px;
+    }
+
+    .name {
+      grid-row: 2;
+      grid-column: 1 / -1;
+      align-self: end;
+      padding-right: 4px;
+      font-size: 15px;
+    }
   }
 
-  .tab:hover .description,
-  .tab:focus-within .description {
-    -webkit-line-clamp: 2;
-    line-clamp: 2;
-  }
-
-  .picture {
-    flex: none;
-    display: grid;
-    place-items: center;
-    width: 68px;
-    height: 68px;
-    border-radius: 50%;
-  }
-
-  .picture img {
-    width: 100%;
-    height: 100%;
-    object-fit: contain;
-    transition: transform 0.4s cubic-bezier(0.3, 1.4, 0.5, 1);
-  }
-
-  .tab:hover .picture img {
-    transform: scale(1.12) rotate(-4deg);
-  }
-
-  .glass {
-    width: 40px;
-    height: 40px;
-    border-radius: 50%;
-    background: radial-gradient(
-      circle at 35% 30%,
-      color-mix(in srgb, white 70%, var(--ink)),
-      var(--ink) 55%,
-      color-mix(in srgb, black 35%, var(--ink))
-    );
+  @container card (min-height: 150px) and (min-width: 170px) {
+    .desc {
+      grid-row: 3;
+      grid-column: 1 / -1;
+      display: -webkit-box;
+      margin-top: 4px;
+      padding-right: 4px;
+      overflow: hidden;
+      font-size: 13px;
+      line-height: 1.4;
+      color: color-mix(in srgb, var(--cream) 72%, transparent);
+      -webkit-box-orient: vertical;
+      -webkit-line-clamp: 2;
+      line-clamp: 2;
+    }
   }
 
   @media (prefers-reduced-motion: reduce) {
-    .tab,
-    .tab:hover,
-    .tab:focus-within {
-      transition: box-shadow 0.3s;
-    }
-
-    .tab:hover .picture img {
-      transform: none;
-    }
-  }
-
-  @media (max-width: 760px) {
-    .tab,
-    .tab:hover,
-    .tab:focus-within {
-      width: 100%;
-      min-height: 76px;
+    .card,
+    .orb {
+      transition: none;
     }
   }
 </style>

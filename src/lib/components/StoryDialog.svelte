@@ -1,7 +1,8 @@
 <script lang="ts">
   import type { Attachment } from 'svelte/attachments';
   import { MAX_DESCRIPTION, ORNAMENTS } from '../ornaments';
-  import type { Story, StoryPatch } from '../tree.svelte';
+  import { tree, type Story, type StoryPatch } from '../tree.svelte';
+  import type { View } from '../tree/glassFir';
   import EditableYear from './EditableYear.svelte';
   import FestivePanel from './festive/FestivePanel.svelte';
   import GoldButton from './festive/GoldButton.svelte';
@@ -26,6 +27,12 @@
     if (openId && !dialog.open) dialog.showModal();
     if (!openId && dialog.open) dialog.close();
   };
+
+  // The decoration as it hangs on the tree, turning, to spin by dragging across it.
+  const live =
+    (view: View, id: string): Attachment<HTMLCanvasElement> =>
+    (canvas) =>
+      view(id, canvas);
 
   const select: Attachment<HTMLTextAreaElement> = (area) => {
     area.focus();
@@ -99,7 +106,13 @@
             {#if !story.clipped}
               <span class="string"></span>
             {/if}
-            {#if story.image}
+            {#if tree.view}
+              {#key story.id}
+                <canvas {@attach live(tree.view, story.id)} title="Drag to spin">
+                  The {story.name}; drag across it to spin it.
+                </canvas>
+              {/key}
+            {:else if story.image}
               {#key story.id}
                 <img src={story.image} alt={`The ${story.name}`} />
               {/key}
@@ -240,7 +253,7 @@
     background: linear-gradient(var(--gold), #b8892b);
   }
 
-  .hanger img {
+  .hanger :is(img, canvas) {
     width: min(280px, 100%);
     aspect-ratio: 1;
     object-fit: contain;
@@ -255,7 +268,12 @@
     animation-duration: 7s;
   }
 
-  .clipped img {
+  canvas {
+    cursor: grab;
+    touch-action: none;
+  }
+
+  .clipped :is(img, canvas) {
     margin-top: 0;
   }
 
@@ -426,7 +444,7 @@
     .story[open],
     .story::backdrop,
     .hanger,
-    .hanger img {
+    .hanger :is(img, canvas) {
       animation: none;
     }
   }
@@ -438,7 +456,7 @@
       padding: 58px 20px 4px;
     }
 
-    .hanger img {
+    .hanger :is(img, canvas) {
       width: min(220px, 70vw);
     }
 
