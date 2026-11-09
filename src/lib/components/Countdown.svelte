@@ -19,9 +19,6 @@
       <div class="sphere"><span class="big">24</span><span class="unit">December</span></div>
     </div>
     <h2>Merry Christmas</h2>
-    <p class="quiet">
-      The tree is up. <button type="button" class="linkish" onclick={onLoginClick}>Log in</button> to see it.
-    </p>
   {:else}
     {@const { days, hours, minutes, seconds } = countdown}
     <div class="ornament" aria-hidden="true">
@@ -37,13 +34,11 @@
       role="timer"
       aria-label={`${days} days, ${hours} hours and ${minutes} minutes until Christmas Eve`}
     >
+      <div><b>{days}</b><span>{days === 1 ? 'day' : 'days'}</span></div>
       <div><b>{pad(hours)}</b><span>hours</span></div>
       <div><b>{pad(minutes)}</b><span>minutes</span></div>
       <div><b>{pad(seconds)}</b><span>seconds</span></div>
     </div>
-    <p class="quiet">
-      <button type="button" class="linkish" onclick={onLoginClick}>Log in</button> to see your tree.
-    </p>
   {/if}
 </section>
 
@@ -175,32 +170,6 @@
     margin-top: 4px;
     font-size: 13px;
     color: var(--text-muted);
-  }
-
-  .quiet {
-    margin: 22px 0 0;
-    font-size: 15px;
-    color: var(--text-muted);
-  }
-
-  .linkish {
-    padding: 0;
-    border: 0;
-    background: none;
-    color: var(--text);
-    font: inherit;
-    font-weight: 500;
-    text-decoration: underline;
-    text-decoration-color: var(--gold);
-    text-decoration-thickness: 2px;
-    text-underline-offset: 3px;
-    cursor: pointer;
-  }
-
-  .linkish:focus-visible {
-    outline: 2px solid var(--focus);
-    outline-offset: 3px;
-    border-radius: 2px;
   }
 
   @container app (max-width: 760px) {
