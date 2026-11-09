@@ -153,6 +153,8 @@ const TOPPER_R = 0.032;
 const TOPPER_SEAT = TIP + 0.011;
 /** How far above the tip the tree's space reaches, for the topper's spire, in tree units. */
 const HEADROOM = 0.18;
+/** How far towards the camera a bauble being moved is lifted, clear of the others, in tree units. */
+const LIFT = 0.3;
 
 const TIERS: Tier[] = [
   { y0: TIP, y1: 0.25, wt: 0, wb: 0.16, fill: '#386d50' },
@@ -188,25 +190,25 @@ export const BAUBLES: BaubleDef[] = [
     reach: 2.5,
     fixed: true,
   },
-  { id: 'lime-jj', x: 0.015, y: 0.13, r: 0.042, p: 'jj' },
-  { id: 'burgundy-swirls', x: -0.12, y: 0.29, r: 0.037, p: 'swirls' },
-  { id: 'grey-streaks', x: 0.145, y: 0.33, r: 0.04, p: 'streaks' },
-  { id: 'gold', x: -0.01, y: 0.41, r: 0.045, p: 'bird', label: 'glass songbird' },
-  { id: 'copper-winter', x: -0.23, y: 0.5, r: 0.042, p: 'copper' },
+  { id: 'lime-jj', x: 0.0373, y: 0.2175, r: 0.042, p: 'jj' },
+  { id: 'burgundy-swirls', x: 0.1478, y: 0.3463, r: 0.037, p: 'swirls' },
+  { id: 'grey-streaks', x: 0.0492, y: 0.6211, r: 0.04, p: 'streaks' },
+  { id: 'gold', x: -0.1221, y: 0.3181, r: 0.045, p: 'bird', label: 'glass songbird' },
+  { id: 'copper-winter', x: -0.219, y: 0.5044, r: 0.042, p: 'copper' },
   {
     id: 'cream-stripes',
-    x: 0.215,
-    y: 0.52,
+    x: 0.2584,
+    y: 0.4489,
     r: 0.058,
     p: 'swan',
     label: 'emerald glass swan',
     reach: 1.4,
   },
-  { id: 'teal-flakes', x: 0.03, y: 0.585, r: 0.062, p: 'heart', label: 'frosted glass heart' },
+  { id: 'teal-flakes', x: -0.0021, y: 0.421, r: 0.062, p: 'heart', label: 'frosted glass heart' },
   {
     id: 'pink-bands',
-    x: -0.31,
-    y: 0.7,
+    x: -0.2135,
+    y: 0.6581,
     r: 0.05,
     p: 'goldbird',
     label: 'golden glass songbird',
@@ -214,16 +216,16 @@ export const BAUBLES: BaubleDef[] = [
   },
   {
     id: 'navy-meridians',
-    x: 0.3,
-    y: 0.68,
+    x: 0.2665,
+    y: 0.7139,
     r: 0.05,
     p: 'snowflake',
     label: 'plum glitter snowflake',
   },
   {
     id: 'red-stars',
-    x: 0.12,
-    y: 0.79,
+    x: -0.0235,
+    y: 0.7527,
     r: 0.04,
     p: 'redbird',
     label: 'ruby glass songbird',
@@ -735,8 +737,38 @@ export function mountGlassFir(stage: HTMLElement, options: GlassFirOptions = {})
     three = null;
   }
 
+  // The bauble being moved in edit mode, drawn in front of all the others.
+  let lifted: Bauble | null = null;
+
+  /**
+   * Hangs a bauble at its place. The lifted one is brought towards the camera and shrunk
+   * by as much as that enlarges it, so it looks just the same but passes in front.
+   */
   function place(b: Bauble) {
-    b.pivot.position.set(b.x * TH * SLIM, -b.y * TH, 0);
+    const x = b.x * TH * SLIM;
+    const y = -b.y * TH;
+    if (b !== lifted || !three) {
+      b.pivot.position.set(x, y, 0);
+      b.pivot.scale.setScalar(TH);
+      return;
+    }
+    const { root, camera } = three;
+    const k = 1 - (LIFT * TH) / camera.position.z;
+    b.pivot.position.set(
+      (root.position.x + x) * k - root.position.x,
+      (root.position.y + y) * k - root.position.y,
+      LIFT * TH
+    );
+    b.pivot.scale.setScalar(TH * k);
+  }
+
+  function lift(b: Bauble | null) {
+    if (b === lifted) return;
+    const was = lifted;
+    lifted = b;
+    if (!TH) return;
+    if (was) place(was);
+    if (b) place(b);
   }
 
   function layout() {
@@ -766,10 +798,7 @@ export function mountGlassFir(stage: HTMLElement, options: GlassFirOptions = {})
       camera.far = dist * 3;
       camera.updateProjectionMatrix();
       root.position.set(cx - W / 2, H / 2 - top, 0);
-      for (const b of baubles) {
-        place(b);
-        b.pivot.scale.setScalar(TH);
-      }
+      for (const b of baubles) place(b);
     }
   }
 
@@ -786,22 +815,39 @@ export function mountGlassFir(stage: HTMLElement, options: GlassFirOptions = {})
   const silCtx = document.createElement('canvas').getContext('2d')!;
   const inside = (u: number, v: number) =>
     silhouette.some((p) => silCtx.isPointInPath(p, u * SIL, v * SIL));
+  // Points around a unit circle, for testing a bauble's whole outline.
+  const RIM = Array.from({ length: 16 }, (_, i) => {
+    const a = (i * Math.PI * 2) / 16;
+    return [Math.cos(a), Math.sin(a)];
+  });
+  /**
+   * Whether a bauble centred at (u, v) in tree units lies wholly on the tree: its
+   * ball's outline, horizontally squeezed like the tree is, and the point it hangs from.
+   */
+  const fits = (r: number, d: number, u: number, v: number) =>
+    inside(u, v - d) && RIM.every(([ex, ey]) => inside(u + (ex * r) / SLIM, v + ey * r));
 
   /**
    * Moves a bauble's centre towards (u, v) in tree units, as far as it can go
-   * along the way without leaving the tree. Returns whether it moved.
+   * along the way without any of it leaving the tree. Returns whether it moved.
    */
   function moveCentre(b: Bauble, u: number, v: number) {
     if (b.def.fixed) return false;
-    const d = drop(b.def.r);
+    const { r } = b.def;
+    const d = drop(r);
     const fromU = b.x;
     const fromV = b.y + d;
+    // A bauble already hanging over the edge (from an older layout) only has to keep its
+    // centre on the tree until it is moved fully onto it.
+    const ok = fits(r, d, fromU, fromV)
+      ? (pu: number, pv: number) => fits(r, d, pu, pv)
+      : (pu: number, pv: number) => fits(r, d, pu, pv) || inside(pu, pv);
     let lo = 0;
     let hi = 1;
-    if (!inside(u, v)) {
+    if (!ok(u, v)) {
       for (let i = 0; i < 10; i++) {
         const mid = (lo + hi) / 2;
-        if (inside(fromU + (u - fromU) * mid, fromV + (v - fromV) * mid)) lo = mid;
+        if (ok(fromU + (u - fromU) * mid, fromV + (v - fromV) * mid)) lo = mid;
         else hi = mid;
       }
       hi = lo;
@@ -865,6 +911,7 @@ export function mountGlassFir(stage: HTMLElement, options: GlassFirOptions = {})
     if (grabbed) {
       if (editing) {
         hold = { x: p.x - X(grabbed.x), y: p.y - Y(grabbed.y + drop(grabbed.def.r)) };
+        lift(grabbed);
       }
       stage.setPointerCapture(e.pointerId);
       stage.style.cursor = 'grabbing';
@@ -913,6 +960,7 @@ export function mountGlassFir(stage: HTMLElement, options: GlassFirOptions = {})
 
   const release = () => {
     grabbed = null;
+    lift(null);
     stage.style.cursor = 'default';
   };
   const onPointerLeave = () => {
@@ -954,6 +1002,7 @@ export function mountGlassFir(stage: HTMLElement, options: GlassFirOptions = {})
       e.preventDefault();
       const b = baubles[picked];
       const size = e.shiftKey ? 0.02 : 0.005;
+      lift(b);
       moveCentre(b, b.x + step[0] * size, b.y + drop(b.def.r) + step[1] * size);
       return;
     }
@@ -1247,6 +1296,7 @@ export function mountGlassFir(stage: HTMLElement, options: GlassFirOptions = {})
         timers.forEach(clearTimeout);
         timers = [];
         grabbed = null;
+        lift(null);
         return;
       }
       for (const b of three.baubles) {
@@ -1263,6 +1313,7 @@ export function mountGlassFir(stage: HTMLElement, options: GlassFirOptions = {})
     setEditing(on) {
       editing = on;
       grabbed = null;
+      lift(null);
       last = null;
       stage.style.cursor = 'default';
     },
