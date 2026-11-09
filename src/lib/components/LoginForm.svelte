@@ -8,17 +8,30 @@
 
   let { onSuccess }: Props = $props();
 
+  /** the secret code gate is up through 24 December 2026, then login is back to two fields */
+  const SECRET_CODE = 'ňuf';
+  const SECRET_CODE_UNTIL = new Date(2026, 11, 25);
+  const askForSecretCode = new Date() < SECRET_CODE_UNTIL;
+
+  const normalize = (code: string) => code.trim().normalize('NFC').toLocaleLowerCase('cs');
+
   let email = $state('');
   let password = $state('');
+  let secretCode = $state('');
+  let secretCodeError = $state(false);
   let isSubmitting = $state(false);
 
   const isEmailValid = $derived(/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email));
   const isPasswordValid = $derived(password.length >= 8);
-  const isValid = $derived(isEmailValid && isPasswordValid);
+  const isSecretCodeFilled = $derived(!askForSecretCode || secretCode.trim().length > 0);
+  const isValid = $derived(isEmailValid && isPasswordValid && isSecretCodeFilled);
 
   async function onsubmit(event: SubmitEvent) {
     event.preventDefault();
     if (!isValid) return;
+
+    secretCodeError = askForSecretCode && normalize(secretCode) !== normalize(SECRET_CODE);
+    if (secretCodeError) return;
 
     isSubmitting = true;
 
@@ -55,6 +68,24 @@
       <small>Must be at least 8 characters</small>
     {/if}
   </label>
+
+  {#if askForSecretCode}
+    <label>
+      <span>Secret code</span>
+      <input
+        type="text"
+        autocomplete="off"
+        autocapitalize="off"
+        spellcheck="false"
+        bind:value={secretCode}
+        oninput={() => (secretCodeError = false)}
+        required
+      />
+      {#if secretCodeError}
+        <small>Wrong secret code</small>
+      {/if}
+    </label>
+  {/if}
 
   {#if auth.error}
     <p class="error" role="alert">{auth.error}</p>
